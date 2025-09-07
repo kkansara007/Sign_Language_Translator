@@ -351,9 +351,6 @@ python -m http.server 8000
       }
     }
     
-    // Call this function when the page loads
-    window.addEventListener('load', loadModel);
-
     // This function will use the loaded model to predict the gesture
     function predictGesture(landmarks) {
       if (!gestureModel || !landmarks) return null;
@@ -604,6 +601,47 @@ python -m http.server 8000
     stopCollectBtn.addEventListener('click', stopCollection);
     downloadDataBtn.addEventListener('click', downloadDataset);
     clearDataBtn.addEventListener('click', clearDataset);
+
+    // ====== New Code to Load Dataset from File ======
+
+    async function loadDataset() {
+      try {
+        const response = await fetch("./model_basics.json");
+        if (!response.ok) throw new Error("Could not load dataset");
+        
+        const jsonData = await response.json();
+        console.log("Dataset loaded:", jsonData);
+
+        // Overwrite the existing dataset variable
+        dataset = jsonData;
+
+        // Update UI
+        sampleCount.textContent = dataset.length;
+        collectionStatus.textContent = "Dataset loaded from file.";
+        downloadDataBtn.disabled = false; // Enable download button if data is present
+        listDatasetLabels();
+      } catch (err) {
+        showError("Failed to load dataset: " + err.message);
+        console.error(err);
+      }
+    }
+
+    function listDatasetLabels() {
+      const labels = [...new Set(dataset.map(d => d.label))];
+      supportedSignsEl.innerHTML = '';
+      labels.forEach(l => {
+        const span = document.createElement("span");
+        span.className = "tag px-2 py-1 rounded-full";
+        span.textContent = l;
+        supportedSignsEl.appendChild(span);
+      });
+    }
+
+    // Call both load functions on page load
+    window.addEventListener("load", () => {
+      loadModel();
+      loadDataset();
+    });
   </script>
 </body>
 </html>
