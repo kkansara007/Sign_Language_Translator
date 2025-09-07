@@ -293,6 +293,10 @@ python -m http.server 8000
     const SEQ_LENGTH = 20; // frames per sequence
     let lastSequenceTime = 0; // Timestamp of the last captured sequence
     const DELAY_MS = 4000; // 4 second delay
+    
+    // Buffer for LSTM model
+    let frameBuffer = [];
+    const LSTM_SEQ_LEN = 20;
 
     function setFont(px){ outputBox.style.fontSize = px+'px'; }
     fontRange.addEventListener('input', e => setFont(e.target.value)); setFont(fontRange.value);
@@ -326,11 +330,11 @@ python -m http.server 8000
     async function loadModel() {
       try {
         camLabel.textContent = 'Loading model...';
-        gestureModel = await tf.loadGraphModel('./model_tfjs/model.json');
+        // Note: The file name here must match the one from your training script
+        gestureModel = await tf.loadLayersModel('./model_tfjs/model.json');
         
-        // You'll need to define your labels here based on your training data
-        // For example, if you trained 'A', 'B', 'C', your labels would be ['A', 'B', 'C']
-        // The order must be the same as the one used during training!
+        // This is a placeholder. After training, you must get the labels from your Python script
+        // or ensure this list matches the order of labels from your training data!
         LABELS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
         
         // Populate the supported signs UI
@@ -351,35 +355,6 @@ python -m http.server 8000
       }
     }
     
-    // This function will use the loaded model to predict the gesture
-    function predictGesture(landmarks) {
-      if (!gestureModel || !landmarks) return null;
-      
-      // Flatten landmarks into a single array
-      const flattened = landmarks.flatMap(p => [p.x, p.y, p.z]);
-      
-      // Reshape into a tensor that the model expects: [1, 63] for 21 points * 3 dimensions
-      const inputTensor = tf.tensor2d([flattened]);
-      
-      // Run the prediction
-      const prediction = gestureModel.predict(inputTensor);
-      const output = prediction.dataSync();
-      
-      // Get the index of the highest probability
-      const maxIndex = output.indexOf(Math.max(...output));
-      const confidence = output[maxIndex];
-
-      inputTensor.dispose();
-      prediction.dispose();
-
-      // Check if confidence is above the threshold from the UI
-      if (confidence > confRange.value) {
-        return LABELS[maxIndex];
-      }
-      return null;
-    }
-
-
     // ====== MediaPipe hands setup ======
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
     hands.setOptions({
@@ -429,8 +404,32 @@ python -m http.server 8000
               collectionStatus.textContent = `Recording... (${sequence.length}/${SEQ_LENGTH})`;
             }
           }
+          
+          // New logic for LSTM model
+          const flattened = lm.flatMap(p => [p.x, p.y, p.z]);
+          frameBuffer.push(flattened);
+          if (frameBuffer.length > LSTM_SEQ_LEN) {
+              frameBuffer.shift(); // Keep buffer at fixed size
+          }
 
-          token = predictGesture(lm);
+          if (gestureModel && frameBuffer.length === LSTM_SEQ_LEN) {
+              // Reshape the frame buffer into a tensor of shape [1, SEQ_LEN, 63]
+              const input = tf.tensor([frameBuffer]);
+              const prediction = gestureModel.predict(input);
+              const output = prediction.dataSync();
+
+              // Get the index of the highest probability
+              const maxIndex = output.indexOf(Math.max(...output));
+              const confidence = output[maxIndex];
+
+              input.dispose();
+              prediction.dispose();
+
+              if (confidence > confRange.value) {
+                token = LABELS[maxIndex];
+              }
+          }
+
         } else if (isCollectingData) {
             collectionStatus.textContent = "Waiting for hand...";
         }
