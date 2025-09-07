@@ -3,20 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sign lang Translator</title>
+  <title>ASL Live Translator</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root { --card: #0b1020; --ink:#e5e7eb; --ink-dim:#9ca3af; --accent:#8b5cf6; --accent-2:#22d3ee; }
     body { background: radial-gradient(1200px 600px at 10% -10%, rgba(139,92,246,.15), transparent),
-                   radial-gradient(800px 500px at 110% 10%, rgba(34,211,238,.15), transparent),
-                   #0a0f1f; color: var(--ink); }
+             radial-gradient(800px 500px at 110% 10%, rgba(34,211,238,.15), transparent),
+             #0a0f1f; color: var(--ink); font-family: 'Inter', sans-serif; }
     .card { background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-            border: 1px solid rgba(255,255,255,.08); box-shadow: 0 8px 30px rgba(0,0,0,.35);
-            backdrop-filter: blur(6px); }
+           border: 1px solid rgba(255,255,255,.08); box-shadow: 0 8px 30px rgba(0,0,0,.35);
+           backdrop-filter: blur(6px); }
     .neon { text-shadow: 0 0 18px rgba(139,92,246,.6); }
     .tag  { background: rgba(139,92,246,.18); border: 1px solid rgba(139,92,246,.35);
-            color:#e9d5ff; }
+           color:#e9d5ff; }
     .pulse-dot { box-shadow: 0 0 0 rgba(34, 211, 238, 0.8); animation: pulse 2s infinite; }
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, .7); }
       70% { box-shadow: 0 0 0 20px rgba(34, 211, 238, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); } }
@@ -26,7 +26,7 @@
     dialog .content { color: var(--ink); }
   </style>
   <!-- MediaPipe Hands & drawing utils -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.min.js"></script>
   <!-- TensorFlow.js for loading and running the model -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
@@ -102,7 +102,6 @@
         
         <!-- The list of supported signs will now be determined by your training data -->
         <div class="mb-3">
-          <p class="text-xs font-semibold text-slate-400 mb-2">After training your model, this list will show the labels you provided.</p>
           <div id="supportedSigns" class="flex flex-wrap gap-1 text-xs">
             <span class="tag px-2 py-1 rounded-full">LOADING...</span>
           </div>
@@ -159,7 +158,7 @@
       </div>
 
       <div class="mt-6 bg-white/3 rounded-xl p-4 text-sm text-slate-300">
-        <strong>Test cases (added):</strong>
+        <strong>Test cases:</strong>
         <ol class="list-decimal list-inside ml-4 mt-2">
           <li>Grant camera permission and make a supported sign — expect token appended after a short hold.</li>
           <li>If permission denied, upload any short video of hands (via the upload button) — the app will process uploaded video frames as a test case.</li>
@@ -222,7 +221,7 @@ python -m http.server 8000
   </dialog>
 
   <footer class="max-w-7xl mx-auto px-4 pb-10 text-center text-xs text-slate-400">
-    Made by ketan,Khushi,Kovidh,Sageena to help you guys ,thanks guy!!
+    Made to help you guys!
   </footer>
 
   <script>
@@ -325,17 +324,17 @@ python -m http.server 8000
 
     // ====== Model Prediction ======
     let gestureModel = null;
-    let LABELS = []; // This will be populated from the model's metadata or a separate file
+    let LABELS = []; 
 
     async function loadModel() {
       try {
         camLabel.textContent = 'Loading model...';
-        // Note: The file name here must match the one from your training script
+        // Load the trained model and the labels file
         gestureModel = await tf.loadLayersModel('./model_tfjs/model.json');
         
-        // This is a placeholder. After training, you must get the labels from your Python script
-        // or ensure this list matches the order of labels from your training data!
-        LABELS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
+        const response = await fetch("./model_labels.json");
+        if (!response.ok) throw new Error("Could not load labels file. Make sure you've trained your model.");
+        LABELS = await response.json();
         
         // Populate the supported signs UI
         supportedSignsEl.innerHTML = '';
@@ -347,10 +346,10 @@ python -m http.server 8000
         });
 
         camLabel.textContent = 'Ready';
-        console.log('Model loaded successfully.');
+        console.log('Model and labels loaded successfully.');
       } catch (e) {
         camLabel.textContent = 'Model not found!';
-        showError('Model not found. Please train your model using the Python script and place the "model_tfjs" folder in the same directory as this file.');
+        showError('Failed to load model or labels. Please train your model and place the "model_tfjs" folder and "model_labels.json" file in the same directory as this file.');
         console.error('Failed to load model:', e);
       }
     }
@@ -601,45 +600,9 @@ python -m http.server 8000
     downloadDataBtn.addEventListener('click', downloadDataset);
     clearDataBtn.addEventListener('click', clearDataset);
 
-    // ====== New Code to Load Dataset from File ======
-
-    async function loadDataset() {
-      try {
-        const response = await fetch("./model_basics.json");
-        if (!response.ok) throw new Error("Could not load dataset");
-        
-        const jsonData = await response.json();
-        console.log("Dataset loaded:", jsonData);
-
-        // Overwrite the existing dataset variable
-        dataset = jsonData;
-
-        // Update UI
-        sampleCount.textContent = dataset.length;
-        collectionStatus.textContent = "Dataset loaded from file.";
-        downloadDataBtn.disabled = false; // Enable download button if data is present
-        listDatasetLabels();
-      } catch (err) {
-        showError("Failed to load dataset: " + err.message);
-        console.error(err);
-      }
-    }
-
-    function listDatasetLabels() {
-      const labels = [...new Set(dataset.map(d => d.label))];
-      supportedSignsEl.innerHTML = '';
-      labels.forEach(l => {
-        const span = document.createElement("span");
-        span.className = "tag px-2 py-1 rounded-full";
-        span.textContent = l;
-        supportedSignsEl.appendChild(span);
-      });
-    }
-
-    // Call both load functions on page load
+    // Call loadModel on page load
     window.addEventListener("load", () => {
       loadModel();
-      loadDataset();
     });
   </script>
 </body>
