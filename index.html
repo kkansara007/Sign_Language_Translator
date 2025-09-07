@@ -28,6 +28,8 @@
   <!-- MediaPipe Hands & drawing utils -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.min.js"></script>
+  <!-- TensorFlow.js for loading and running the model -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
 </head>
 <body class="min-h-screen">
   <header class="max-w-7xl mx-auto px-4 pt-6">
@@ -96,52 +98,13 @@
         <span id="ghost" class="opacity-60 text-sm">Make a sign in view of the camera…</span>
       </div>
       <div class="mt-4">
-        <h3 class="text-sm uppercase tracking-wide text-slate-300 mb-3">Currently supported signs (expanded set)</h3>
+        <h3 class="text-sm uppercase tracking-wide text-slate-300 mb-3">Supported signs</h3>
         
-        <!-- Alphabet -->
+        <!-- The list of supported signs will now be determined by your training data -->
         <div class="mb-3">
-          <h4 class="text-xs font-semibold text-slate-400 mb-2">ASL ALPHABET</h4>
-          <div class="flex flex-wrap gap-1 text-xs">
-            <span class="tag px-2 py-1 rounded-full">A</span>
-            <span class="tag px-2 py-1 rounded-full">B</span>
-            <span class="tag px-2 py-1 rounded-full">C</span>
-            <span class="tag px-2 py-1 rounded-full">D</span>
-            <span class="tag px-2 py-1 rounded-full">E</span>
-            <span class="tag px-2 py-1 rounded-full">F</span>
-            <span class="tag px-2 py-1 rounded-full">G</span>
-            <span class="tag px-2 py-1 rounded-full">H</span>
-            <span class="tag px-2 py-1 rounded-full">I</span>
-            <span class="tag px-2 py-1 rounded-full">J</span>
-            <span class="tag px-2 py-1 rounded-full">K</span>
-            <span class="tag px-2 py-1 rounded-full">L</span>
-            <span class="tag px-2 py-1 rounded-full">M</span>
-            <span class="tag px-2 py-1 rounded-full">N</span>
-            <span class="tag px-2 py-1 rounded-full">O</span>
-            <span class="tag px-2 py-1 rounded-full">P</span>
-            <span class="tag px-2 py-1 rounded-full">Q</span>
-            <span class="tag px-2 py-1 rounded-full">R</span>
-            <span class="tag px-2 py-1 rounded-full">S</span>
-            <span class="tag px-2 py-1 rounded-full">T</span>
-            <span class="tag px-2 py-1 rounded-full">U</span>
-            <span class="tag px-2 py-1 rounded-full">V</span>
-            <span class="tag px-2 py-1 rounded-full">W</span>
-            <span class="tag px-2 py-1 rounded-full">X</span>
-            <span class="tag px-2 py-1 rounded-full">Y</span>
-            <span class="tag px-2 py-1 rounded-full">Z</span>
-          </div>
-        </div>
-        
-
-        
-        <!-- Common Words -->
-        <div>
-          <h4 class="text-xs font-semibold text-slate-400 mb-2">COMMON WORDS</h4>
-          <div class="flex flex-wrap gap-1 text-xs">
-            <span class="tag px-2 py-1 rounded-full">👍 YES</span>
-            <span class="tag px-2 py-1 rounded-full">✋ HELLO</span>
-            <span class="tag px-2 py-1 rounded-full">THANK YOU</span>
-            <span class="tag px-2 py-1 rounded-full">PLEASE</span>
-            <span class="tag px-2 py-1 rounded-full">SORRY</span>
+          <p class="text-xs font-semibold text-slate-400 mb-2">After training your model, this list will show the labels you provided.</p>
+          <div id="supportedSigns" class="flex flex-wrap gap-1 text-xs">
+            <span class="tag px-2 py-1 rounded-full">LOADING...</span>
           </div>
         </div>
       </div>
@@ -160,7 +123,8 @@
       <div class="flex-1 rounded-2xl border border-white/10 bg-white/5 p-4 overflow-auto leading-relaxed" style="min-height:12rem;">
         <p class="text-sm text-slate-300">
           Status: <span id="collectionStatus" class="font-semibold">Idle</span><br>
-          Total samples: <span id="sampleCount" class="font-semibold">0</span>
+          Total sequences: <span id="sampleCount" class="font-semibold">0</span><br>
+          Frames in sequence: <span id="framesInSequence" class="font-semibold">0</span>/20
         </p>
       </div>
       <div class="mt-4 flex gap-2">
@@ -190,7 +154,7 @@
         </div>
         <div class="bg-white/5 rounded-xl p-4">
           <h4 class="font-semibold mb-2">Expanded recognition</h4>
-          <p class="text-slate-300">Now supports the full ASL alphabet (A-Z), numbers (0-9), and common words. Uses advanced geometric analysis of hand landmarks for improved accuracy.</p>
+          <p class="text-slate-300">Now uses a custom-trained model for recognition, which can handle any signs you provided in your training data!</p>
         </div>
       </div>
 
@@ -294,6 +258,7 @@ python -m http.server 8000
     const errClose = document.getElementById('errClose');
     const uploadBtn = document.getElementById('uploadBtn');
     const fileInput = document.getElementById('fileInput');
+    const supportedSignsEl = document.getElementById('supportedSigns');
 
     howToBtn.addEventListener('click', (e) => { e.preventDefault(); howTo.showModal(); });
     practiceToggle.addEventListener('click', () => practicePanel.classList.toggle('hidden'));
@@ -323,6 +288,11 @@ python -m http.server 8000
     const clearDataBtn = document.getElementById('clearDataBtn');
     const collectionStatus = document.getElementById('collectionStatus');
     const sampleCount = document.getElementById('sampleCount');
+    const framesInSequenceSpan = document.getElementById('framesInSequence');
+    let sequence = [];
+    const SEQ_LENGTH = 20; // frames per sequence
+    let lastSequenceTime = 0; // Timestamp of the last captured sequence
+    const DELAY_MS = 4000; // 4 second delay
 
     function setFont(px){ outputBox.style.fontSize = px+'px'; }
     fontRange.addEventListener('input', e => setFont(e.target.value)); setFont(fontRange.value);
@@ -349,234 +319,69 @@ python -m http.server 8000
       utter.lang = 'en-US'; utter.rate = 1; speechSynthesis.speak(utter);
     });
 
-    // ====== Geometry helpers for hand landmarks ======
-    function vsub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
-    function vlen(v){ return Math.hypot(v.x, v.y); }
-    function dot(a,b){ return a.x*b.x + a.y*b.y; }
-    function angle(a,b,c){ // angle at b for triangle abc
-      const ab = vsub(a,b), cb = vsub(c,b);
-      const cos = dot(ab,cb)/(vlen(ab)*vlen(cb)+1e-6); return Math.acos(Math.max(-1,Math.min(1,cos)));
-    }
-    function isFingerExtended(lm, tip, pip, mcp, wrist){
-      const ang = angle(lm[tip], lm[pip], lm[mcp]);
-      const distTip = vlen(vsub(lm[tip], wrist));
-      const distPip = vlen(vsub(lm[pip], wrist));
-      return ang > 2.6 && distTip > distPip; // ~149°
-    }
-    function thumbExtended(lm){
-      const wrist = lm[0], tip=lm[4], mcp=lm[2];
-      const dx = Math.abs(tip.x - wrist.x);
-      const base = Math.abs(mcp.x - wrist.x) + 1e-6;
-      return dx/base > 0.8; // fairly extended to the side
-    }
+    // ====== Model Prediction ======
+    let gestureModel = null;
+    let LABELS = []; // This will be populated from the model's metadata or a separate file
 
-    function classifyGesture(lm){
-      if(!lm) return null;
-      const w = lm[0];
-      const ext = {
-        thumb: thumbExtended(lm),
-        index: isFingerExtended(lm,8,6,5,w),
-        middle: isFingerExtended(lm,12,10,9,w),
-        ring: isFingerExtended(lm,16,14,13,w),
-        pinky: isFingerExtended(lm,20,18,17,w)
-      };
-
-      const palmSize = vlen(vsub(lm[5], lm[17])) + 1e-6;
-      const okDist = vlen(vsub(lm[8], lm[4]));
-      const ok = okDist / palmSize < 0.3;
-      const vSpread = vlen(vsub(lm[8], lm[12]))/palmSize;
-      const cDist = vlen(vsub(lm[8], lm[4]))/palmSize;
-      const flatPalm = ext.index && ext.middle && ext.ring && ext.pinky;
-      
-      // Additional geometric measurements for more signs
-      const indexTipY = lm[8].y;
-      const middleTipY = lm[12].y;
-      const ringTipY = lm[16].y;
-      const pinkyTipY = lm[20].y;
-      const thumbTipY = lm[4].y;
-      const wristY = w.y;
-      const indexPipY = lm[6].y;
-      const middlePipY = lm[10].y;
-      
-      // Finger pointing directions
-      const indexPointingUp = ext.index && indexTipY < indexPipY - 0.02;
-      const indexPointingDown = ext.index && indexTipY > indexPipY + 0.02;
-      const thumbPointingUp = ext.thumb && thumbTipY < wristY - 0.05;
-      
-      // Distance measurements
-      const thumbIndexDist = vlen(vsub(lm[4], lm[8])) / palmSize;
-      const indexMiddleDist = vlen(vsub(lm[8], lm[12])) / palmSize;
-      const middleRingDist = vlen(vsub(lm[12], lm[16])) / palmSize;
-      
-      // Hand orientation (palm facing camera vs side)
-      const palmFacingCamera = Math.abs(lm[5].x - lm[17].x) < 0.1;
-
-      // === ALPHABET LETTERS ===
-      // A - Closed fist with thumb on side
-      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky) return 'A';
-      
-      // B - Flat palm, all fingers extended, thumb tucked
-      if(!ext.thumb && ext.index && ext.middle && ext.ring && ext.pinky) return 'B';
-      
-      // C - Curved hand like holding a cup
-      if(cDist > 0.35 && cDist < 0.9 && !ext.middle && !ext.ring) return 'C';
-      
-      // D - Index finger up, others closed, thumb touching middle finger
-      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && indexPointingUp) return 'D';
-      
-      // E - All fingers bent down, thumb across palm
-      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
-         indexTipY > middlePipY && middleTipY > middlePipY) return 'E';
-      
-      // F - OK sign - thumb and index touching, others extended
-      if(ok && ext.middle && ext.ring && ext.pinky) return 'F';
-      
-      // G - Index finger pointing sideways
-      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && !indexPointingUp) return 'G';
-      
-      // H - Index and middle fingers extended sideways
-      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
-         indexMiddleDist < 0.3) return 'H';
-      
-      // I - Pinky finger extended
-      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && ext.pinky) return 'I';
-      
-      // J - Pinky extended with motion (we'll detect static position)
-      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && ext.pinky && 
-         pinkyTipY < wristY - 0.03) return 'J';
-      
-      // K - Index and middle up, thumb between them
-      if(ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
-         thumbTipY < indexTipY && thumbTipY < middleTipY) return 'K';
-      
-      // L - Thumb and index extended at 90 degrees
-      if(ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && 
-         thumbIndexDist > 0.8) return 'L';
-      
-      // M - Thumb under first three fingers
-      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
-         thumbTipY > indexTipY) return 'M';
-      
-      // N - Thumb under first two fingers
-      if(!ext.thumb && !ext.index && !ext.middle && ext.ring && ext.pinky) return 'N';
-      
-      // O - All fingers curved to form circle
-      if(thumbIndexDist < 0.4 && cDist < 0.5 && !ext.middle && !ext.ring && !ext.pinky) return 'O';
-      
-      // P - Index and middle down, thumb and ring/pinky extended
-      if(ext.thumb && !ext.index && !ext.middle && ext.ring && ext.pinky && 
-         indexPointingDown) return 'P';
-      
-      // Q - Thumb and index pointing down
-      if(ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && 
-         indexPointingDown && thumbTipY > wristY) return 'Q';
-      
-      // R - Index and middle crossed
-      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
-         indexMiddleDist < 0.2) return 'R';
-      
-      // S - Closed fist with thumb over fingers
-      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
-         thumbTipY < indexTipY - 0.02) return 'S';
-      
-      // T - Thumb between index and middle
-      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
-         thumbTipY > indexTipY && thumbTipY < wristY) return 'T';
-      
-      // U - Index and middle up together
-      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
-         indexMiddleDist < 0.3 && indexPointingUp) return 'U';
-      
-      // V - Index and middle separated in V shape
-      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
-         vSpread > 0.6) return 'V';
-      
-      // W - Three fingers up (index, middle, ring)
-      if(!ext.thumb && ext.index && ext.middle && ext.ring && !ext.pinky) return 'W';
-      
-      // X - Index finger bent like hook
-      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
-         indexTipY > indexPipY && indexTipY < wristY) return 'X';
-      
-      // Y - Thumb and pinky extended (shaka sign)
-      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && ext.pinky) return 'Y';
-      
-      // Z - Index finger tracing Z (we'll detect pointing gesture)
-      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && 
-         !indexPointingUp && palmFacingCamera) return 'Z';
-
-      // === NUMBERS ===
-      // 1 - Index finger up
-      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && indexPointingUp) return '1';
-      
-      // 2 - Index and middle up in V
-      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && vSpread > 0.4) return '2';
-      
-      // 3 - Thumb, index, and middle up
-      if(ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky) return '3';
-      
-      // 4 - Four fingers up (no thumb)
-      if(!ext.thumb && ext.index && ext.middle && ext.ring && ext.pinky) return '4';
-      
-      // 5 - All fingers extended
-      if(ext.thumb && ext.index && ext.middle && ext.ring && ext.pinky) return '5';
-      
-      // 6 - Thumb and pinky touching, others extended
-      if(!ext.thumb && ext.index && ext.middle && ext.ring && !ext.pinky && 
-         thumbIndexDist > 0.6) return '6';
-      
-      // 7 - Ring finger down, others up
-      if(ext.thumb && ext.index && ext.middle && !ext.ring && ext.pinky) return '7';
-      
-      // 8 - Middle finger down, others up
-      if(ext.thumb && ext.index && !ext.middle && ext.ring && ext.pinky) return '8';
-      
-      // 9 - Index finger down, others up
-      if(ext.thumb && ext.index && !ext.middle && ext.ring && ext.pinky) return '9';
-      
-      // 0 - Thumb and index forming circle, others extended
-      if(thumbIndexDist < 0.4 && ext.middle && ext.ring && ext.pinky) return '0';
-
-      // === COMMON WORDS ===
-      // HELLO - Open palm facing forward
-      if(flatPalm && palmFacingCamera) return 'HELLO';
-      
-      // YES - Thumbs up
-      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && thumbPointingUp) return '👍';
-      
-      // THANK YOU - Flat hand moving from chin (we'll detect flat palm near face area)
-      if(flatPalm && !palmFacingCamera) return 'THANK_YOU';
-      
-      // PLEASE - Flat hand on chest in circular motion (detect flat palm)
-      if(flatPalm && thumbTipY > wristY - 0.1) return 'PLEASE';
-      
-      // SORRY - Closed fist on chest
-      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
-         thumbTipY > wristY - 0.05) return 'SORRY';
-
-      return null;
-    }
-
-    // Debounce/stabilize predictions across frames
-    function stabilize(token){
-      if(cooldown>0){ cooldown--; return null; }
-      if(token && token===stableGesture){ holdCounter++; }
-      else { stableGesture = token; holdCounter = token?1:0; }
-      if(stableGesture && holdCounter >= HOLD_FRAMES){
-        holdCounter = 0; cooldown = 10; // avoid duplicates
+    async function loadModel() {
+      try {
+        camLabel.textContent = 'Loading model...';
+        gestureModel = await tf.loadGraphModel('./model_tfjs/model.json');
         
-        // Handle special word mappings
-        if(stableGesture==='👍') return 'YES ';
-        if(stableGesture==='HELLO') return 'HELLO ';
-        if(stableGesture==='THANK_YOU') return 'THANK YOU ';
-        if(stableGesture==='PLEASE') return 'PLEASE ';
-        if(stableGesture==='SORRY') return 'SORRY ';
+        // You'll need to define your labels here based on your training data
+        // For example, if you trained 'A', 'B', 'C', your labels would be ['A', 'B', 'C']
+        // The order must be the same as the one used during training!
+        LABELS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
         
-        // Numbers and letters get appended directly
-        return stableGesture;
+        // Populate the supported signs UI
+        supportedSignsEl.innerHTML = '';
+        LABELS.forEach(label => {
+            const span = document.createElement('span');
+            span.className = 'tag px-2 py-1 rounded-full';
+            span.textContent = label;
+            supportedSignsEl.appendChild(span);
+        });
+
+        camLabel.textContent = 'Ready';
+        console.log('Model loaded successfully.');
+      } catch (e) {
+        camLabel.textContent = 'Model not found!';
+        showError('Model not found. Please train your model using the Python script and place the "model_tfjs" folder in the same directory as this file.');
+        console.error('Failed to load model:', e);
+      }
+    }
+    
+    // Call this function when the page loads
+    window.addEventListener('load', loadModel);
+
+    // This function will use the loaded model to predict the gesture
+    function predictGesture(landmarks) {
+      if (!gestureModel || !landmarks) return null;
+      
+      // Flatten landmarks into a single array
+      const flattened = landmarks.flatMap(p => [p.x, p.y, p.z]);
+      
+      // Reshape into a tensor that the model expects: [1, 63] for 21 points * 3 dimensions
+      const inputTensor = tf.tensor2d([flattened]);
+      
+      // Run the prediction
+      const prediction = gestureModel.predict(inputTensor);
+      const output = prediction.dataSync();
+      
+      // Get the index of the highest probability
+      const maxIndex = output.indexOf(Math.max(...output));
+      const confidence = output[maxIndex];
+
+      inputTensor.dispose();
+      prediction.dispose();
+
+      // Check if confidence is above the threshold from the UI
+      if (confidence > confRange.value) {
+        return LABELS[maxIndex];
       }
       return null;
     }
+
 
     // ====== MediaPipe hands setup ======
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
@@ -605,21 +410,51 @@ python -m http.server 8000
           const lm = results.multiHandLandmarks[0];
           drawConnectors(ctx, lm, Hands.HAND_CONNECTIONS, {color: '#22d3ee', lineWidth: 3});
           drawLandmarks(ctx, lm, {color: '#8b5cf6', lineWidth: 1, radius: 3});
-          
-          // Data collection logic
-          if (isCollectingData && currentLabel) {
+
+          if (isCollectingData) {
+            const now = performance.now();
+            if (now - lastSequenceTime < DELAY_MS) {
+                collectionStatus.textContent = `Delaying... (Next capture in ${Math.ceil((DELAY_MS - (now - lastSequenceTime)) / 1000)}s)`;
+                return;
+            }
+
             const flattened = lm.flatMap(p => [p.x, p.y, p.z]);
-            dataset.push({ label: currentLabel, landmarks: flattened });
-            collectionStatus.textContent = `Recording...`;
-            sampleCount.textContent = dataset.length;
+            sequence.push(flattened);
+            framesInSequenceSpan.textContent = sequence.length;
+
+            if (sequence.length === SEQ_LENGTH) {
+              dataset.push({ label: currentLabel, landmarks: sequence });
+              sequence = [];
+              lastSequenceTime = performance.now();
+              sampleCount.textContent = dataset.length;
+              collectionStatus.textContent = "Sequence captured! Delaying...";
+            } else {
+              collectionStatus.textContent = `Recording... (${sequence.length}/${SEQ_LENGTH})`;
+            }
           }
 
-          token = classifyGesture(lm);
+          token = predictGesture(lm);
+        } else if (isCollectingData) {
+            collectionStatus.textContent = "Waiting for hand...";
         }
+        
         const out = stabilize(token);
         if(out) appendText(out);
       } catch(e){ console.error('onResults error', e); }
     }
+
+    // Debounce/stabilize predictions across frames
+    function stabilize(token){
+      if(cooldown>0){ cooldown--; return null; }
+      if(token && token===stableGesture){ holdCounter++; }
+      else { stableGesture = token; holdCounter = token?1:0; }
+      if(stableGesture && holdCounter >= HOLD_FRAMES){
+        holdCounter = 0; cooldown = 10; // avoid duplicates
+        return stableGesture;
+      }
+      return null;
+    }
+
 
     // Frame loop when using a stream or a file-based video
     let rafId = null;
@@ -730,17 +565,20 @@ python -m http.server 8000
         labelInput.disabled = true;
         startCollectBtn.disabled = true;
         stopCollectBtn.disabled = false;
-        downloadDataBtn.disabled = false; // Fix: Enable download button
-        collectionStatus.textContent = `Recording...`;
+        downloadDataBtn.disabled = false;
+        collectionStatus.textContent = "Waiting for hand...";
+        lastSequenceTime = 0;
     }
 
     function stopCollection() {
         isCollectingData = false;
         currentLabel = null;
+        sequence = [];
+        framesInSequenceSpan.textContent = '0';
         labelInput.disabled = false;
         startCollectBtn.disabled = false;
         stopCollectBtn.disabled = true;
-        collectionStatus.textContent = `Stopped.`;
+        collectionStatus.textContent = "Stopped.";
     }
 
     function downloadDataset() {
@@ -759,7 +597,7 @@ python -m http.server 8000
         dataset = [];
         sampleCount.textContent = '0';
         collectionStatus.textContent = "Dataset cleared.";
-        downloadDataBtn.disabled = true; // Fix: Disable download button
+        downloadDataBtn.disabled = true;
     }
 
     startCollectBtn.addEventListener('click', startCollection);
