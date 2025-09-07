@@ -147,6 +147,32 @@
       </div>
     </section>
 
+    <!-- Right: Dataset Collection card -->
+    <section class="card rounded-2xl p-4 md:p-6 flex flex-col">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold">Dataset Collection</h2>
+        <div class="flex gap-2 items-center">
+            <input type="text" id="labelInput" placeholder="Label (e.g., A)" class="bg-white/5 rounded-xl px-4 py-2 w-28 text-sm" />
+            <button id="startCollectBtn" class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 font-semibold">Start</button>
+            <button id="stopCollectBtn" class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 font-semibold" disabled>Stop</button>
+        </div>
+      </div>
+      <div class="flex-1 rounded-2xl border border-white/10 bg-white/5 p-4 overflow-auto leading-relaxed" style="min-height:12rem;">
+        <p class="text-sm text-slate-300">
+          Status: <span id="collectionStatus" class="font-semibold">Idle</span><br>
+          Total samples: <span id="sampleCount" class="font-semibold">0</span>
+        </p>
+      </div>
+      <div class="mt-4 flex gap-2">
+        <button id="downloadDataBtn" class="flex-1 px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-semibold" disabled>
+          Download Dataset
+        </button>
+        <button id="clearDataBtn" class="flex-1 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 font-semibold">
+          Clear
+        </button>
+      </div>
+    </section>
+    
     <!-- Bottom: Practice/Learning Mode -->
     <section class="lg:col-span-2 card rounded-2xl p-6">
       <div class="flex items-center justify-between">
@@ -286,6 +312,18 @@ python -m http.server 8000
     const HOLD_FRAMES = 12; // ~400ms at 30fps
     let cooldown = 0; // frames to wait after appending a token
 
+    // ====== Dataset Collection State ======
+    let dataset = [];
+    let currentLabel = null;
+    let isCollectingData = false;
+    const labelInput = document.getElementById('labelInput');
+    const startCollectBtn = document.getElementById('startCollectBtn');
+    const stopCollectBtn = document.getElementById('stopCollectBtn');
+    const downloadDataBtn = document.getElementById('downloadDataBtn');
+    const clearDataBtn = document.getElementById('clearDataBtn');
+    const collectionStatus = document.getElementById('collectionStatus');
+    const sampleCount = document.getElementById('sampleCount');
+
     function setFont(px){ outputBox.style.fontSize = px+'px'; }
     fontRange.addEventListener('input', e => setFont(e.target.value)); setFont(fontRange.value);
     contrastToggle.addEventListener('change', e => {
@@ -302,7 +340,7 @@ python -m http.server 8000
 
     copyBtn.addEventListener('click', async() => {
       try{ await navigator.clipboard.writeText(outputBox.innerText); copyBtn.textContent='✔'; setTimeout(()=>copyBtn.textContent='📋',800); }
-      catch(e){ alert('Copy failed: '+e.message); }
+      catch(e){ showError(e); }
     });
     spaceBtn.addEventListener('click', ()=> appendText(' '));
     clearBtn.addEventListener('click', ()=> outputBox.textContent='');
@@ -567,6 +605,15 @@ python -m http.server 8000
           const lm = results.multiHandLandmarks[0];
           drawConnectors(ctx, lm, Hands.HAND_CONNECTIONS, {color: '#22d3ee', lineWidth: 3});
           drawLandmarks(ctx, lm, {color: '#8b5cf6', lineWidth: 1, radius: 3});
+          
+          // Data collection logic
+          if (isCollectingData && currentLabel) {
+            const flattened = lm.flatMap(p => [p.x, p.y, p.z]);
+            dataset.push({ label: currentLabel, landmarks: flattened });
+            collectionStatus.textContent = `Recording...`;
+            sampleCount.textContent = dataset.length;
+          }
+
           token = classifyGesture(lm);
         }
         const out = stabilize(token);
@@ -667,48 +714,56 @@ python -m http.server 8000
       console.log('Media devices changed');
     });
 
-    // Auto-open instructions on first load is handled above
-<body>
-  <video class="input_video"></video>
-  <canvas class="output_canvas"></canvas>
-  <button onclick="downloadData()">Download Dataset</button>
-
-  <script>
-    let dataset = [];
-    let currentLabel = null;
-
-    function onResults(results) {
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        const lm = results.multiHandLandmarks[0];
-        const flattened = lm.flatMap(p => [p.x, p.y, p.z]);
-
-        if (currentLabel) {
-          dataset.push({ label: currentLabel, landmarks: flattened });
+    // ====== Dataset Collection Functions and Event Listeners ======
+    function startCollection() {
+        const label = labelInput.value.trim().toUpperCase();
+        if (!label) {
+            showError("Please enter a label for the dataset.");
+            return;
         }
-      }
+        if (!running) {
+            showError("Please start the camera first.");
+            return;
+        }
+        currentLabel = label;
+        isCollectingData = true;
+        labelInput.disabled = true;
+        startCollectBtn.disabled = true;
+        stopCollectBtn.disabled = false;
+        collectionStatus.textContent = `Recording for: ${currentLabel}`;
     }
 
-    // Keyboard labeling
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "a") currentLabel = "A";
-      if (e.key === "b") currentLabel = "B";
-      if (e.key === "c") currentLabel = "C";
-    });
-    document.addEventListener("keyup", () => { currentLabel = null; });
-
-    // Download collected data
-    function downloadData() {
-      const blob = new Blob([JSON.stringify(dataset)], { type: "application/json" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = "sign_dataset.json";
-      link.click();
+    function stopCollection() {
+        isCollectingData = false;
+        currentLabel = null;
+        labelInput.disabled = false;
+        startCollectBtn.disabled = false;
+        stopCollectBtn.disabled = true;
+        collectionStatus.textContent = `Stopped.`;
     }
-  </script>
-</body>
 
+    function downloadDataset() {
+        if (dataset.length === 0) {
+            showError("No data to download.");
+            return;
+        }
+        const blob = new Blob([JSON.stringify(dataset, null, 2)], { type: "application/json" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `sign_dataset_${new Date().toISOString().slice(0, 10)}.json`;
+        link.click();
+    }
 
-    
+    function clearDataset() {
+        dataset = [];
+        sampleCount.textContent = '0';
+        collectionStatus.textContent = "Dataset cleared.";
+    }
+
+    startCollectBtn.addEventListener('click', startCollection);
+    stopCollectBtn.addEventListener('click', stopCollection);
+    downloadDataBtn.addEventListener('click', downloadDataset);
+    clearDataBtn.addEventListener('click', clearDataset);
   </script>
 </body>
 </html>
