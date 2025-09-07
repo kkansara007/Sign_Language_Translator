@@ -668,6 +668,40 @@ python -m http.server 8000
     });
 
     // Auto-open instructions on first load is handled above
+let dataset = [];
+
+// When results come in
+function onResults(results) {
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    const lm = results.multiHandLandmarks[0];
+    // Flatten [ {x,y,z}, ... ] into 1D array
+    const flattened = lm.flatMap(p => [p.x, p.y, p.z]);
+    // If a label is active, save
+    if (currentLabel) {
+      dataset.push({ label: currentLabel, landmarks: flattened });
+    }
+  }
+}
+
+// Set label with keyboard
+let currentLabel = null;
+document.addEventListener("keydown", (e) => {
+  if (e.key === "a") currentLabel = "A";
+  if (e.key === "b") currentLabel = "B";
+  if (e.key === "c") currentLabel = "C";
+});
+document.addEventListener("keyup", () => { currentLabel = null; });
+
+// Save dataset as JSON
+function downloadData() {
+  const blob = new Blob([JSON.stringify(dataset)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "sign_dataset.json";
+  link.click();
+}
+
+    
   </script>
 </body>
 </html>
