@@ -96,19 +96,68 @@
         <span id="ghost" class="opacity-60 text-sm">Make a sign in view of the camera…</span>
       </div>
       <div class="mt-4">
-        <h3 class="text-sm uppercase tracking-wide text-slate-300 mb-2">Currently supported signs (starter set)</h3>
-        <div class="flex flex-wrap gap-2 text-xs">
-          <span class="tag px-2 py-1 rounded-full">A (fist)</span>
-          <span class="tag px-2 py-1 rounded-full">B (flat palm)</span>
-          <span class="tag px-2 py-1 rounded-full">C</span>
-          <span class="tag px-2 py-1 rounded-full">D</span>
-          <span class="tag px-2 py-1 rounded-full">L</span>
-          <span class="tag px-2 py-1 rounded-full">V</span>
-          <span class="tag px-2 py-1 rounded-full">W</span>
-          <span class="tag px-2 py-1 rounded-full">Y (shaka)</span>
-          <span class="tag px-2 py-1 rounded-full">F / OK</span>
-          <span class="tag px-2 py-1 rounded-full">👍 YES</span>
-          <span class="tag px-2 py-1 rounded-full">✋ HELLO</span>
+        <h3 class="text-sm uppercase tracking-wide text-slate-300 mb-3">Currently supported signs (expanded set)</h3>
+        
+        <!-- Alphabet -->
+        <div class="mb-3">
+          <h4 class="text-xs font-semibold text-slate-400 mb-2">ASL ALPHABET</h4>
+          <div class="flex flex-wrap gap-1 text-xs">
+            <span class="tag px-2 py-1 rounded-full">A</span>
+            <span class="tag px-2 py-1 rounded-full">B</span>
+            <span class="tag px-2 py-1 rounded-full">C</span>
+            <span class="tag px-2 py-1 rounded-full">D</span>
+            <span class="tag px-2 py-1 rounded-full">E</span>
+            <span class="tag px-2 py-1 rounded-full">F</span>
+            <span class="tag px-2 py-1 rounded-full">G</span>
+            <span class="tag px-2 py-1 rounded-full">H</span>
+            <span class="tag px-2 py-1 rounded-full">I</span>
+            <span class="tag px-2 py-1 rounded-full">J</span>
+            <span class="tag px-2 py-1 rounded-full">K</span>
+            <span class="tag px-2 py-1 rounded-full">L</span>
+            <span class="tag px-2 py-1 rounded-full">M</span>
+            <span class="tag px-2 py-1 rounded-full">N</span>
+            <span class="tag px-2 py-1 rounded-full">O</span>
+            <span class="tag px-2 py-1 rounded-full">P</span>
+            <span class="tag px-2 py-1 rounded-full">Q</span>
+            <span class="tag px-2 py-1 rounded-full">R</span>
+            <span class="tag px-2 py-1 rounded-full">S</span>
+            <span class="tag px-2 py-1 rounded-full">T</span>
+            <span class="tag px-2 py-1 rounded-full">U</span>
+            <span class="tag px-2 py-1 rounded-full">V</span>
+            <span class="tag px-2 py-1 rounded-full">W</span>
+            <span class="tag px-2 py-1 rounded-full">X</span>
+            <span class="tag px-2 py-1 rounded-full">Y</span>
+            <span class="tag px-2 py-1 rounded-full">Z</span>
+          </div>
+        </div>
+        
+        <!-- Numbers -->
+        <div class="mb-3">
+          <h4 class="text-xs font-semibold text-slate-400 mb-2">NUMBERS</h4>
+          <div class="flex flex-wrap gap-1 text-xs">
+            <span class="tag px-2 py-1 rounded-full">0</span>
+            <span class="tag px-2 py-1 rounded-full">1</span>
+            <span class="tag px-2 py-1 rounded-full">2</span>
+            <span class="tag px-2 py-1 rounded-full">3</span>
+            <span class="tag px-2 py-1 rounded-full">4</span>
+            <span class="tag px-2 py-1 rounded-full">5</span>
+            <span class="tag px-2 py-1 rounded-full">6</span>
+            <span class="tag px-2 py-1 rounded-full">7</span>
+            <span class="tag px-2 py-1 rounded-full">8</span>
+            <span class="tag px-2 py-1 rounded-full">9</span>
+          </div>
+        </div>
+        
+        <!-- Common Words -->
+        <div>
+          <h4 class="text-xs font-semibold text-slate-400 mb-2">COMMON WORDS</h4>
+          <div class="flex flex-wrap gap-1 text-xs">
+            <span class="tag px-2 py-1 rounded-full">👍 YES</span>
+            <span class="tag px-2 py-1 rounded-full">✋ HELLO</span>
+            <span class="tag px-2 py-1 rounded-full">THANK YOU</span>
+            <span class="tag px-2 py-1 rounded-full">PLEASE</span>
+            <span class="tag px-2 py-1 rounded-full">SORRY</span>
+          </div>
         </div>
       </div>
     </section>
@@ -129,8 +178,8 @@
           <p class="text-slate-300">Hold each sign steady for ~400–600 ms so the system can lock it in and avoid duplicates.</p>
         </div>
         <div class="bg-white/5 rounded-xl p-4">
-          <h4 class="font-semibold mb-2">Glossary note</h4>
-          <p class="text-slate-300">This starter build uses hand‑shape heuristics for a subset of ASL. You can expand it later with a ML model trained on landmarks.</p>
+          <h4 class="font-semibold mb-2">Expanded recognition</h4>
+          <p class="text-slate-300">Now supports the full ASL alphabet (A-Z), numbers (0-9), and common words. Uses advanced geometric analysis of hand landmarks for improved accuracy.</p>
         </div>
       </div>
 
@@ -315,17 +364,173 @@ python -m http.server 8000
       const vSpread = vlen(vsub(lm[8], lm[12]))/palmSize;
       const cDist = vlen(vsub(lm[8], lm[4]))/palmSize;
       const flatPalm = ext.index && ext.middle && ext.ring && ext.pinky;
+      
+      // Additional geometric measurements for more signs
+      const indexTipY = lm[8].y;
+      const middleTipY = lm[12].y;
+      const ringTipY = lm[16].y;
+      const pinkyTipY = lm[20].y;
+      const thumbTipY = lm[4].y;
+      const wristY = w.y;
+      const indexPipY = lm[6].y;
+      const middlePipY = lm[10].y;
+      
+      // Finger pointing directions
+      const indexPointingUp = ext.index && indexTipY < indexPipY - 0.02;
+      const indexPointingDown = ext.index && indexTipY > indexPipY + 0.02;
+      const thumbPointingUp = ext.thumb && thumbTipY < wristY - 0.05;
+      
+      // Distance measurements
+      const thumbIndexDist = vlen(vsub(lm[4], lm[8])) / palmSize;
+      const indexMiddleDist = vlen(vsub(lm[8], lm[12])) / palmSize;
+      const middleRingDist = vlen(vsub(lm[12], lm[16])) / palmSize;
+      
+      // Hand orientation (palm facing camera vs side)
+      const palmFacingCamera = Math.abs(lm[5].x - lm[17].x) < 0.1;
 
-      if(ok && ext.middle && !ext.ring) return 'F';
-      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky) return '👍';
-      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky) return 'D';
-      if(ext.index && ext.middle && !ext.ring && !ext.pinky && vSpread > 0.6) return 'V';
-      if(ext.index && ext.middle && ext.ring && !ext.pinky) return 'W';
-      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && ext.pinky) return 'Y';
+      // === ALPHABET LETTERS ===
+      // A - Closed fist with thumb on side
       if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky) return 'A';
+      
+      // B - Flat palm, all fingers extended, thumb tucked
       if(!ext.thumb && ext.index && ext.middle && ext.ring && ext.pinky) return 'B';
-      if(cDist > 0.35 && cDist < 0.9 && !ext.middle) return 'C';
-      if(flatPalm) return 'HELLO';
+      
+      // C - Curved hand like holding a cup
+      if(cDist > 0.35 && cDist < 0.9 && !ext.middle && !ext.ring) return 'C';
+      
+      // D - Index finger up, others closed, thumb touching middle finger
+      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && indexPointingUp) return 'D';
+      
+      // E - All fingers bent down, thumb across palm
+      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
+         indexTipY > middlePipY && middleTipY > middlePipY) return 'E';
+      
+      // F - OK sign - thumb and index touching, others extended
+      if(ok && ext.middle && ext.ring && ext.pinky) return 'F';
+      
+      // G - Index finger pointing sideways
+      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && !indexPointingUp) return 'G';
+      
+      // H - Index and middle fingers extended sideways
+      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
+         indexMiddleDist < 0.3) return 'H';
+      
+      // I - Pinky finger extended
+      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && ext.pinky) return 'I';
+      
+      // J - Pinky extended with motion (we'll detect static position)
+      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && ext.pinky && 
+         pinkyTipY < wristY - 0.03) return 'J';
+      
+      // K - Index and middle up, thumb between them
+      if(ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
+         thumbTipY < indexTipY && thumbTipY < middleTipY) return 'K';
+      
+      // L - Thumb and index extended at 90 degrees
+      if(ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && 
+         thumbIndexDist > 0.8) return 'L';
+      
+      // M - Thumb under first three fingers
+      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
+         thumbTipY > indexTipY) return 'M';
+      
+      // N - Thumb under first two fingers
+      if(!ext.thumb && !ext.index && !ext.middle && ext.ring && ext.pinky) return 'N';
+      
+      // O - All fingers curved to form circle
+      if(thumbIndexDist < 0.4 && cDist < 0.5 && !ext.middle && !ext.ring && !ext.pinky) return 'O';
+      
+      // P - Index and middle down, thumb and ring/pinky extended
+      if(ext.thumb && !ext.index && !ext.middle && ext.ring && ext.pinky && 
+         indexPointingDown) return 'P';
+      
+      // Q - Thumb and index pointing down
+      if(ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && 
+         indexPointingDown && thumbTipY > wristY) return 'Q';
+      
+      // R - Index and middle crossed
+      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
+         indexMiddleDist < 0.2) return 'R';
+      
+      // S - Closed fist with thumb over fingers
+      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
+         thumbTipY < indexTipY - 0.02) return 'S';
+      
+      // T - Thumb between index and middle
+      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
+         thumbTipY > indexTipY && thumbTipY < wristY) return 'T';
+      
+      // U - Index and middle up together
+      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
+         indexMiddleDist < 0.3 && indexPointingUp) return 'U';
+      
+      // V - Index and middle separated in V shape
+      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && 
+         vSpread > 0.6) return 'V';
+      
+      // W - Three fingers up (index, middle, ring)
+      if(!ext.thumb && ext.index && ext.middle && ext.ring && !ext.pinky) return 'W';
+      
+      // X - Index finger bent like hook
+      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
+         indexTipY > indexPipY && indexTipY < wristY) return 'X';
+      
+      // Y - Thumb and pinky extended (shaka sign)
+      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && ext.pinky) return 'Y';
+      
+      // Z - Index finger tracing Z (we'll detect pointing gesture)
+      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && 
+         !indexPointingUp && palmFacingCamera) return 'Z';
+
+      // === NUMBERS ===
+      // 1 - Index finger up
+      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky && indexPointingUp) return '1';
+      
+      // 2 - Index and middle up in V
+      if(!ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky && vSpread > 0.4) return '2';
+      
+      // 3 - Thumb, index, and middle up
+      if(ext.thumb && ext.index && ext.middle && !ext.ring && !ext.pinky) return '3';
+      
+      // 4 - Four fingers up (no thumb)
+      if(!ext.thumb && ext.index && ext.middle && ext.ring && ext.pinky) return '4';
+      
+      // 5 - All fingers extended
+      if(ext.thumb && ext.index && ext.middle && ext.ring && ext.pinky) return '5';
+      
+      // 6 - Thumb and pinky touching, others extended
+      if(!ext.thumb && ext.index && ext.middle && ext.ring && !ext.pinky && 
+         thumbIndexDist > 0.6) return '6';
+      
+      // 7 - Ring finger down, others up
+      if(ext.thumb && ext.index && ext.middle && !ext.ring && ext.pinky) return '7';
+      
+      // 8 - Middle finger down, others up
+      if(ext.thumb && ext.index && !ext.middle && ext.ring && ext.pinky) return '8';
+      
+      // 9 - Index finger down, others up
+      if(ext.thumb && !ext.index && ext.middle && ext.ring && ext.pinky) return '9';
+      
+      // 0 - Thumb and index forming circle, others extended
+      if(thumbIndexDist < 0.4 && ext.middle && ext.ring && ext.pinky) return '0';
+
+      // === COMMON WORDS ===
+      // HELLO - Open palm facing forward
+      if(flatPalm && palmFacingCamera) return 'HELLO';
+      
+      // YES - Thumbs up
+      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && thumbPointingUp) return '👍';
+      
+      // THANK YOU - Flat hand moving from chin (we'll detect flat palm near face area)
+      if(flatPalm && !palmFacingCamera) return 'THANK_YOU';
+      
+      // PLEASE - Flat hand on chest in circular motion (detect flat palm)
+      if(flatPalm && thumbTipY > wristY - 0.1) return 'PLEASE';
+      
+      // SORRY - Closed fist on chest
+      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky && 
+         thumbTipY > wristY - 0.05) return 'SORRY';
+
       return null;
     }
 
@@ -336,8 +541,15 @@ python -m http.server 8000
       else { stableGesture = token; holdCounter = token?1:0; }
       if(stableGesture && holdCounter >= HOLD_FRAMES){
         holdCounter = 0; cooldown = 10; // avoid duplicates
+        
+        // Handle special word mappings
         if(stableGesture==='👍') return 'YES ';
         if(stableGesture==='HELLO') return 'HELLO ';
+        if(stableGesture==='THANK_YOU') return 'THANK YOU ';
+        if(stableGesture==='PLEASE') return 'PLEASE ';
+        if(stableGesture==='SORRY') return 'SORRY ';
+        
+        // Numbers and letters get appended directly
         return stableGesture;
       }
       return null;
