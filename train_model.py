@@ -6,66 +6,96 @@ import tensorflow as tf
 from tensorflow import keras
 import tensorflowjs as tfjs
 
-# The sequence length (number of frames) for each sample
-SEQ_LEN = 20
-# The number of features per frame (21 landmarks * (x, y, z coordinates))
-NUM_FEATURES = 63
+# ====== Config ======
+SEQ_LEN = 20                       # frames per sequence
+NUM_FEATURES = 63                  # 21 landmarks × (x,y,z)
+EPOCHS = 30
+BATCH_SIZE = 32
 
-# ===== Load dataset =====
+# ====== Load dataset ======
 with open("model_basics.json") as f:
     raw_data = json.load(f)
 
 X, y = [], []
 for sample in raw_data:
-    landmarks = sample["landmarks"]
+    landmarks = np.array(sample["landmarks"], dtype=float)
 
-    # If it's static (1D) → pad into sequence
-    if isinstance(landmarks[0], (int, float)):
-        seq = np.zeros((SEQ_LEN, NUM_FEATURES))
-        seq[0] = landmarks  # place static sign in first frame
+    # --- Normalize landmarks (optional scaling, helps generalize) ---
+    # Assumes raw values ~ 0–1000 (pixels). Adjust divisor if needed.
+    landmarks = landmarks / 1000.0
+
+    seq = np.zeros((SEQ_LEN, NUM_FEATURES))
+
+    # Handle static vs motion samples
+    if landmarks.ndim == 1:  
+        # static (single frame → shape (63,))
+        seq[0] = landmarks
     else:
-        seq = np.zeros((SEQ_LEN, NUM_FEATURES))
+        # sequence (shape (frames, 63))
         L = min(len(landmarks), SEQ_LEN)
-        seq[:L] = landmarks[:L]  # truncate/pad sequence
+        seq[:L] = landmarks[:L]
 
     X.append(seq)
     y.append(sample["label"])
 
-X = np.array(X)
+X = np.array(X, dtype=float)
 y = np.array(y)
 
-# Encode labels
+# ====== Encode labels ======
 enc = LabelEncoder()
 y_enc = enc.fit_transform(y)
 print("Labels:", enc.classes_)
 
-# Train/test split
-X_train, X_test, y_train, y_test = train_test_split(X, y_enc, test_size=0.2, random_state=42)
+# Save label list for frontend (important!)
+with open("model_labels.json", "w") as f:
+    json.dump(enc.classes_.tolist(), f)
+print("Saved labels to model_labels.json")
 
-# ===== Build LSTM Model =====
+# ====== Train/test split ======
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y_enc, test_size=0.2, random_state=42, stratify=y_enc
+)
+
+# ====== Build model ======
 model = keras.Sequential([
     keras.layers.Input(shape=(SEQ_LEN, NUM_FEATURES)),
-    keras.layers.LSTM(128, return_sequences=False),
+
+    # Stacked LSTMs for better temporal learning
+    keras.layers.LSTM(128, return_sequences=True),
+    keras.layers.LSTM(64),
+
     keras.layers.Dense(64, activation="relu"),
+    keras.layers.Dropout(0.3),
     keras.layers.Dense(len(enc.classes_), activation="softmax")
 ])
 
-model.compile(optimizer="adam", loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+model.compile(optimizer="adam",
+              loss="sparse_categorical_crossentropy",
+              metrics=["accuracy"])
 
-# ===== Train =====
+# ====== Train ======
 print("Training the model...")
-model.fit(X_train, y_train, validation_data=(X_test, y_test), epochs=25, batch_size=32)
+checkpoint = keras.callbacks.ModelCheckpoint(
+    "best_model.h5", save_best_only=True, monitor="val_accuracy", mode="max"
+)
 
-# ===== Evaluate =====
+history = model.fit(
+    X_train, y_train,
+    validation_data=(X_test, y_test),
+    epochs=EPOCHS,
+    batch_size=BATCH_SIZE,
+    callbacks=[checkpoint]
+)
+
+# ====== Evaluate ======
 loss, acc = model.evaluate(X_test, y_test)
-print(f"Test accuracy: {acc * 100:.2f}%")
+print(f"Final Test accuracy: {acc * 100:.2f}%")
 
-# ===== Save and Convert =====
-print("Saving model to asl_model.h5...")
+# ====== Save and Convert ======
+print("Saving final model to asl_model.h5...")
 model.save("asl_model.h5")
 
-# You will need to install tensorflowjs first:
-# pip install tensorflowjs
-print("Converting model to TensorFlow.js format...")
-tfjs.converters.save_keras_model(model, "./model_tfjs")
-print("Conversion complete. Your TF.js model is in the 'model_tfjs' directory.")
+print("Converting best model to TensorFlow.js format...")
+best_model = keras.models.load_model("best_model.h5")
+tfjs.converters.save_keras_model(best_model, "./model_tfjs")
+print("✅ Conversion complete. TF.js model saved in 'model_tfjs' folder.")
