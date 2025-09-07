@@ -532,7 +532,7 @@ python -m http.server 8000
       if(ext.thumb && ext.index && !ext.middle && ext.ring && ext.pinky) return '8';
       
       // 9 - Index finger down, others up
-      if(ext.thumb && !ext.index && ext.middle && ext.ring && ext.pinky) return '9';
+      if(ext.thumb && ext.index && !ext.middle && ext.ring && ext.pinky) return '9';
       
       // 0 - Thumb and index forming circle, others extended
       if(thumbIndexDist < 0.4 && ext.middle && ext.ring && ext.pinky) return '0';
@@ -730,7 +730,8 @@ python -m http.server 8000
         labelInput.disabled = true;
         startCollectBtn.disabled = true;
         stopCollectBtn.disabled = false;
-        collectionStatus.textContent = `Recording for: ${currentLabel}`;
+        downloadDataBtn.disabled = false; // Fix: Enable download button
+        collectionStatus.textContent = `Recording...`;
     }
 
     function stopCollection() {
@@ -758,6 +759,7 @@ python -m http.server 8000
         dataset = [];
         sampleCount.textContent = '0';
         collectionStatus.textContent = "Dataset cleared.";
+        downloadDataBtn.disabled = true; // Fix: Disable download button
     }
 
     startCollectBtn.addEventListener('click', startCollection);
