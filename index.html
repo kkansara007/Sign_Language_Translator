@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign lang Translator</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { --card: #0b1020; --ink:#e5e7eb; --ink-dim:#9ca3af; --accent:#8b5cf6; --accent-2:#22d3ee; }
+    body { background: radial-gradient(1200px 600px at 10% -10%, rgba(139,92,246,.15), transparent),
+                   radial-gradient(800px 500px at 110% 10%, rgba(34,211,238,.15), transparent),
+                   #0a0f1f; color: var(--ink); }
+    .card { background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+            border: 1px solid rgba(255,255,255,.08); box-shadow: 0 8px 30px rgba(0,0,0,.35);
+            backdrop-filter: blur(6px); }
+    .neon { text-shadow: 0 0 18px rgba(139,92,246,.6); }
+    .tag  { background: rgba(139,92,246,.18); border: 1px solid rgba(139,92,246,.35);
+            color:#e9d5ff; }
+    .pulse-dot { box-shadow: 0 0 0 rgba(34, 211, 238, 0.8); animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, .7); }
+      70% { box-shadow: 0 0 0 20px rgba(34, 211, 238, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); } }
+    /* Video mirroring */
+    #videoEl { transform: scaleX(-1); }
+    #overlay { transform: scaleX(-1); }
+    dialog .content { color: var(--ink); }
+  </style>
+  <!-- MediaPipe Hands & drawing utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.min.js"></script>
+</head>
+<body class="min-h-screen">
+  <header class="max-w-7xl mx-auto px-4 pt-6">
+    <div class="flex items-center justify-between">
+      <h1 class="text-3xl md:text-4xl font-extrabold neon">ASL Live Translator</h1>
+      <div class="flex items-center gap-2">
+        <span id="camStatus" class="inline-flex items-center gap-2 text-sm text-slate-300">
+          <span id="camDot" class="w-2.5 h-2.5 rounded-full bg-cyan-400 pulse-dot"></span>
+          Camera: <b id="camLabel" class="font-semibold">Idle</b>
+        </span>
+        <a href="#" id="howToBtn" class="ml-4 text-sm underline decoration-dotted hover:text-cyan-300">How to use</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 grid lg:grid-cols-2 gap-6">
+    <!-- Left: Live feed card -->
+    <section class="card rounded-2xl p-4 md:p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold">Live Camera</h2>
+        <div class="flex gap-2">
+          <button id="startBtn" class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 font-semibold">Start</button>
+          <button id="stopBtn" class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 font-semibold">Stop</button>
+          <button id="snapBtn" class="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600" title="Capture frame">📸</button>
+        </div>
+      </div>
+      <div class="relative rounded-2xl overflow-hidden border border-white/10">
+        <video id="videoEl" class="w-full aspect-video bg-black" playsinline muted></video>
+        <canvas id="overlay" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+        <div id="fpsBadge" class="absolute top-3 right-3 text-xs tag px-2 py-1 rounded-full">FPS: --</div>
+      </div>
+
+      <div class="mt-4 grid sm:grid-cols-3 gap-3 text-sm">
+        <label class="flex items-center justify-between gap-4 bg-white/5 rounded-xl p-3">
+          <span>Confidence threshold</span>
+          <input id="confRange" type="range" min="0.3" max="0.95" step="0.05" value="0.6" />
+        </label>
+        <label class="flex items-center justify-between gap-4 bg-white/5 rounded-xl p-3">
+          <span>Font size</span>
+          <input id="fontRange" type="range" min="16" max="48" step="2" value="22" />
+        </label>
+        <label class="flex items-center justify-between gap-4 bg-white/5 rounded-xl p-3">
+          <span>High contrast</span>
+          <input id="contrastToggle" type="checkbox" />
+        </label>
+      </div>
+
+      <div class="mt-4 text-sm text-slate-300">
+        <strong>Fallback / Test</strong>: If camera permission is denied, you can <button id="uploadBtn" class="underline">upload a video</button> to test detection, or follow the server instructions in the error dialog.
+        <input id="fileInput" type="file" accept="video/*" class="hidden" />
+      </div>
+    </section>
+
+    <!-- Right: Translation card -->
+    <section class="card rounded-2xl p-4 md:p-6 flex flex-col">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold">Translation</h2>
+        <div class="flex gap-2">
+          <button id="speakBtn" class="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600" title="Speak text">🔊</button>
+          <button id="copyBtn" class="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600" title="Copy text">📋</button>
+          <button id="spaceBtn" class="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600" title="Add space">␣</button>
+          <button id="clearBtn" class="px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 font-semibold">Clear</button>
+        </div>
+      </div>
+      <div id="outputBox" class="flex-1 rounded-2xl border border-white/10 bg-white/5 p-4 overflow-auto leading-relaxed" style="min-height:12rem; font-size:22px">
+        <span id="ghost" class="opacity-60 text-sm">Make a sign in view of the camera…</span>
+      </div>
+      <div class="mt-4">
+        <h3 class="text-sm uppercase tracking-wide text-slate-300 mb-2">Currently supported signs (starter set)</h3>
+        <div class="flex flex-wrap gap-2 text-xs">
+          <span class="tag px-2 py-1 rounded-full">A (fist)</span>
+          <span class="tag px-2 py-1 rounded-full">B (flat palm)</span>
+          <span class="tag px-2 py-1 rounded-full">C</span>
+          <span class="tag px-2 py-1 rounded-full">D</span>
+          <span class="tag px-2 py-1 rounded-full">L</span>
+          <span class="tag px-2 py-1 rounded-full">V</span>
+          <span class="tag px-2 py-1 rounded-full">W</span>
+          <span class="tag px-2 py-1 rounded-full">Y (shaka)</span>
+          <span class="tag px-2 py-1 rounded-full">F / OK</span>
+          <span class="tag px-2 py-1 rounded-full">👍 YES</span>
+          <span class="tag px-2 py-1 rounded-full">✋ HELLO</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bottom: Practice/Learning Mode -->
+    <section class="lg:col-span-2 card rounded-2xl p-6">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-semibold">Practice Mode</h2>
+        <button id="practiceToggle" class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600">Show tips</button>
+      </div>
+      <div id="practicePanel" class="mt-4 hidden grid md:grid-cols-3 gap-4 text-sm">
+        <div class="bg-white/5 rounded-xl p-4">
+          <h4 class="font-semibold mb-2">Frame your hand</h4>
+          <p class="text-slate-300">Keep your hand ~50–80 cm from the camera. Avoid backlight. Use a plain background.</p>
+        </div>
+        <div class="bg-white/5 rounded-xl p-4">
+          <h4 class="font-semibold mb-2">Hold for a moment</h4>
+          <p class="text-slate-300">Hold each sign steady for ~400–600 ms so the system can lock it in and avoid duplicates.</p>
+        </div>
+        <div class="bg-white/5 rounded-xl p-4">
+          <h4 class="font-semibold mb-2">Glossary note</h4>
+          <p class="text-slate-300">This starter build uses hand‑shape heuristics for a subset of ASL. You can expand it later with a ML model trained on landmarks.</p>
+        </div>
+      </div>
+
+      <div class="mt-6 bg-white/3 rounded-xl p-4 text-sm text-slate-300">
+        <strong>Test cases (added):</strong>
+        <ol class="list-decimal list-inside ml-4 mt-2">
+          <li>Grant camera permission and make a supported sign — expect token appended after a short hold.</li>
+          <li>If permission denied, upload any short video of hands (via the upload button) — the app will process uploaded video frames as a test case.</li>
+          <li>Use the <code>📸</code> snapshot button to save a frame — validates canvas drawing and overlay rendering.</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+
+  <!-- Error / Permission dialog -->
+  <dialog id="errDialog" class="card rounded-2xl p-4 text-slate-100 w-[min(720px,96vw)]">
+    <div class="flex items-start justify-between mb-3">
+      <div>
+        <h3 class="text-lg font-semibold">Camera access problem</h3>
+        <p class="text-sm text-slate-300 mt-1">Failed to acquire camera. See details and fixes below.</p>
+      </div>
+      <button id="errClose" class="px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600">✕</button>
+    </div>
+    <div class="content text-sm leading-relaxed">
+      <p id="errMsg" class="mb-2"></p>
+      <ul class="list-disc list-inside text-slate-300 mb-3">
+        <li>Make sure you've allowed camera permission for this page.</li>
+        <li>Open the page over <strong>https</strong> or <strong>http://localhost</strong> — many browsers block camera on <code>file://</code>.</li>
+        <li>Check browser settings (Site settings → Camera) and unblock camera access for this site.</li>
+        <li>If you still can't open the camera, use the <em>Upload video</em> fallback to test the app.</li>
+      </ul>
+      <div class="flex gap-2">
+        <button id="retryBtn" class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500">Retry</button>
+        <button id="serverHelpBtn" class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600">Run local server</button>
+        <button id="useFileBtn" class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600">Upload video instead</button>
+      </div>
+      <div id="serverTips" class="hidden mt-3 text-xs text-slate-400 bg-white/3 p-3 rounded">
+        <strong>Quick server tips</strong>
+        <pre class="mt-2 text-xs"># Python 3
+python -m http.server 8000
+# Then open: http://localhost:8000/</pre>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- How to use modal -->
+  <dialog id="howTo" class="card rounded-2xl p-0 text-slate-100 w-[min(680px,95vw)]">
+    <div class="p-5 border-b border-white/10 flex items-start justify-between">
+      <h3 class="text-lg font-semibold">How to use</h3>
+      <button onclick="howTo.close()" class="px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600">✕</button>
+    </div>
+    <div class="p-5 space-y-3 text-sm">
+      <ol class="list-decimal list-inside space-y-2">
+        <li>Click <b>Start</b> and allow camera access.</li>
+        <li>Place your hand in the frame; a skeleton overlay should appear.</li>
+        <li>Make a supported sign and hold briefly. The letter/word will appear on the right.</li>
+        <li>Use <b>🔊</b> to speak the text, <b>📋</b> to copy, <b>␣</b> to insert space, <b>Clear</b> to reset.</li>
+        <li>If camera is blocked by the browser, use the <em>Upload video</em> fallback or run the page from <code>http://localhost</code>.</li>
+      </ol>
+      <p class="text-slate-300">Tip: If FPS is low, reduce other browser tabs or lower your camera resolution by editing the constraints in the code.</p>
+    </div>
+    <div class="p-5 border-t border-white/10 text-right">
+      <button onclick="howTo.close()" class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500">Got it</button>
+    </div>
+  </dialog>
+
+  <footer class="max-w-7xl mx-auto px-4 pb-10 text-center text-xs text-slate-400">
+    Made by ketan,Khushi,Kovidh,Sageena to help you guys ,thanks guy!!
+  </footer>
+
+  <script>
+    // ====== UI Elements ======
+    const videoEl = document.getElementById('videoEl');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const copyBtn = document.getElementById('copyBtn');
+    const speakBtn = document.getElementById('speakBtn');
+    const spaceBtn = document.getElementById('spaceBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const outputBox = document.getElementById('outputBox');
+    const ghost = document.getElementById('ghost');
+    const confRange = document.getElementById('confRange');
+    const fontRange = document.getElementById('fontRange');
+    const contrastToggle = document.getElementById('contrastToggle');
+    const fpsBadge = document.getElementById('fpsBadge');
+    const camLabel = document.getElementById('camLabel');
+    const camDot = document.getElementById('camDot');
+    const howToBtn = document.getElementById('howToBtn');
+    const howTo = document.getElementById('howTo');
+    const practiceToggle = document.getElementById('practiceToggle');
+    const practicePanel = document.getElementById('practicePanel');
+    const snapBtn = document.getElementById('snapBtn');
+    const errDialog = document.getElementById('errDialog');
+    const errMsg = document.getElementById('errMsg');
+    const retryBtn = document.getElementById('retryBtn');
+    const serverHelpBtn = document.getElementById('serverHelpBtn');
+    const serverTips = document.getElementById('serverTips');
+    const useFileBtn = document.getElementById('useFileBtn');
+    const errClose = document.getElementById('errClose');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const fileInput = document.getElementById('fileInput');
+
+    howToBtn.addEventListener('click', (e) => { e.preventDefault(); howTo.showModal(); });
+    practiceToggle.addEventListener('click', () => practicePanel.classList.toggle('hidden'));
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    useFileBtn.addEventListener('click', () => { errDialog.close(); fileInput.click(); });
+    errClose.addEventListener('click', () => errDialog.close());
+    serverHelpBtn.addEventListener('click', () => serverTips.classList.toggle('hidden'));
+
+    // ====== State ======
+    let mediaStream = null;
+    let running = false;
+    let lastFrameTs = performance.now();
+    let fps = 0;
+    let stableGesture = null; // gesture that passed smoothing
+    let holdCounter = 0; // frames of same gesture
+    const HOLD_FRAMES = 12; // ~400ms at 30fps
+    let cooldown = 0; // frames to wait after appending a token
+
+    function setFont(px){ outputBox.style.fontSize = px+'px'; }
+    fontRange.addEventListener('input', e => setFont(e.target.value)); setFont(fontRange.value);
+    contrastToggle.addEventListener('change', e => {
+      document.body.style.background = e.target.checked
+        ? '#000'
+        : 'radial-gradient(1200px 600px at 10% -10%, rgba(139,92,246,.15), transparent),\nradial-gradient(800px 500px at 110% 10%, rgba(34,211,238,.15), transparent),\n#0a0f1f';
+    });
+
+    function appendText(t){
+      if(ghost) ghost.remove();
+      outputBox.append(document.createTextNode(t));
+      outputBox.scrollTop = outputBox.scrollHeight;
+    }
+
+    copyBtn.addEventListener('click', async() => {
+      try{ await navigator.clipboard.writeText(outputBox.innerText); copyBtn.textContent='✔'; setTimeout(()=>copyBtn.textContent='📋',800); }
+      catch(e){ alert('Copy failed: '+e.message); }
+    });
+    spaceBtn.addEventListener('click', ()=> appendText(' '));
+    clearBtn.addEventListener('click', ()=> outputBox.textContent='');
+    speakBtn.addEventListener('click', ()=> {
+      const utter = new SpeechSynthesisUtterance(outputBox.innerText.trim());
+      utter.lang = 'en-US'; utter.rate = 1; speechSynthesis.speak(utter);
+    });
+
+    // ====== Geometry helpers for hand landmarks ======
+    function vsub(a,b){ return {x:a.x-b.x, y:a.y-b.y}; }
+    function vlen(v){ return Math.hypot(v.x, v.y); }
+    function dot(a,b){ return a.x*b.x + a.y*b.y; }
+    function angle(a,b,c){ // angle at b for triangle abc
+      const ab = vsub(a,b), cb = vsub(c,b);
+      const cos = dot(ab,cb)/(vlen(ab)*vlen(cb)+1e-6); return Math.acos(Math.max(-1,Math.min(1,cos)));
+    }
+    function isFingerExtended(lm, tip, pip, mcp, wrist){
+      const ang = angle(lm[tip], lm[pip], lm[mcp]);
+      const distTip = vlen(vsub(lm[tip], wrist));
+      const distPip = vlen(vsub(lm[pip], wrist));
+      return ang > 2.6 && distTip > distPip; // ~149°
+    }
+    function thumbExtended(lm){
+      const wrist = lm[0], tip=lm[4], mcp=lm[2];
+      const dx = Math.abs(tip.x - wrist.x);
+      const base = Math.abs(mcp.x - wrist.x) + 1e-6;
+      return dx/base > 0.8; // fairly extended to the side
+    }
+
+    function classifyGesture(lm){
+      if(!lm) return null;
+      const w = lm[0];
+      const ext = {
+        thumb: thumbExtended(lm),
+        index: isFingerExtended(lm,8,6,5,w),
+        middle: isFingerExtended(lm,12,10,9,w),
+        ring: isFingerExtended(lm,16,14,13,w),
+        pinky: isFingerExtended(lm,20,18,17,w)
+      };
+
+      const palmSize = vlen(vsub(lm[5], lm[17])) + 1e-6;
+      const okDist = vlen(vsub(lm[8], lm[4]));
+      const ok = okDist / palmSize < 0.3;
+      const vSpread = vlen(vsub(lm[8], lm[12]))/palmSize;
+      const cDist = vlen(vsub(lm[8], lm[4]))/palmSize;
+      const flatPalm = ext.index && ext.middle && ext.ring && ext.pinky;
+
+      if(ok && ext.middle && !ext.ring) return 'F';
+      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky) return '👍';
+      if(!ext.thumb && ext.index && !ext.middle && !ext.ring && !ext.pinky) return 'D';
+      if(ext.index && ext.middle && !ext.ring && !ext.pinky && vSpread > 0.6) return 'V';
+      if(ext.index && ext.middle && ext.ring && !ext.pinky) return 'W';
+      if(ext.thumb && !ext.index && !ext.middle && !ext.ring && ext.pinky) return 'Y';
+      if(!ext.thumb && !ext.index && !ext.middle && !ext.ring && !ext.pinky) return 'A';
+      if(!ext.thumb && ext.index && ext.middle && ext.ring && ext.pinky) return 'B';
+      if(cDist > 0.35 && cDist < 0.9 && !ext.middle) return 'C';
+      if(flatPalm) return 'HELLO';
+      return null;
+    }
+
+    // Debounce/stabilize predictions across frames
+    function stabilize(token){
+      if(cooldown>0){ cooldown--; return null; }
+      if(token && token===stableGesture){ holdCounter++; }
+      else { stableGesture = token; holdCounter = token?1:0; }
+      if(stableGesture && holdCounter >= HOLD_FRAMES){
+        holdCounter = 0; cooldown = 10; // avoid duplicates
+        if(stableGesture==='👍') return 'YES ';
+        if(stableGesture==='HELLO') return 'HELLO ';
+        return stableGesture;
+      }
+      return null;
+    }
+
+    // ====== MediaPipe hands setup ======
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({
+      selfieMode: true,
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.55,
+      minTrackingConfidence: 0.5
+    });
+    hands.onResults(onResults);
+
+    // onResults processes outputs from MediaPipe
+    function onResults(results){
+      try {
+        if(canvas.width !== videoEl.videoWidth) canvas.width = videoEl.videoWidth || canvas.width;
+        if(canvas.height !== videoEl.videoHeight) canvas.height = videoEl.videoHeight || canvas.height;
+
+        const now = performance.now(); const dt = now - lastFrameTs; lastFrameTs = now; fps = Math.round(1000/dt);
+        fpsBadge.textContent = `FPS: ${isFinite(fps)?fps:'--'}`;
+
+        ctx.clearRect(0,0,canvas.width, canvas.height);
+
+        let token = null;
+        if(results.multiHandLandmarks && results.multiHandLandmarks.length){
+          const lm = results.multiHandLandmarks[0];
+          drawConnectors(ctx, lm, Hands.HAND_CONNECTIONS, {color: '#22d3ee', lineWidth: 3});
+          drawLandmarks(ctx, lm, {color: '#8b5cf6', lineWidth: 1, radius: 3});
+          token = classifyGesture(lm);
+        }
+        const out = stabilize(token);
+        if(out) appendText(out);
+      } catch(e){ console.error('onResults error', e); }
+    }
+
+    // Frame loop when using a stream or a file-based video
+    let rafId = null;
+    async function frameLoop(){
+      if(!running) return;
+      try {
+        if(videoEl.readyState >= 2){
+          await hands.send({image: videoEl});
+        }
+      } catch(e){ console.error('hands.send failed', e); }
+      rafId = requestAnimationFrame(frameLoop);
+    }
+
+    async function start(){
+      if(running) return; running = true; camLabel.textContent = 'Starting…'; camDot.classList.add('pulse-dot');
+      // Try to get camera stream (handle permission errors explicitly)
+      try {
+        const constraints = { video: { width: 960, height: 540, facingMode: 'user' }, audio: false };
+        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        videoEl.srcObject = mediaStream;
+        await videoEl.play();
+        camLabel.textContent = 'Live';
+        // start frame loop
+        frameLoop();
+      } catch(err){
+        running = false; camLabel.textContent = 'Permission denied'; camDot.classList.remove('pulse-dot');
+        console.error('Failed to acquire camera feed:', err);
+        showError(err);
+      }
+    }
+
+    async function stop(){
+      running = false; camLabel.textContent = 'Stopped'; camDot.classList.remove('pulse-dot');
+      if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
+      if(mediaStream){ mediaStream.getTracks().forEach(t=>t.stop()); mediaStream = null; }
+      videoEl.pause(); videoEl.srcObject = null;
+      ctx.clearRect(0,0,canvas.width, canvas.height);
+    }
+
+    startBtn.addEventListener('click', start);
+    stopBtn.addEventListener('click', stop);
+
+    // Retry flow from dialog
+    retryBtn.addEventListener('click', () => { errDialog.close(); start(); });
+
+    // File upload fallback
+    fileInput.addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if(!f) return;
+      try {
+        await stop();
+        const url = URL.createObjectURL(f);
+        videoEl.srcObject = null; videoEl.src = url; videoEl.muted = true; videoEl.loop = true;
+        await videoEl.play();
+        running = true; camLabel.textContent = 'Playing file';
+        frameLoop();
+      } catch(err){ console.error('file play failed', err); alert('Video file could not be played: '+err.message); }
+    });
+
+    // Snapshot capture
+    snapBtn.addEventListener('click', () => {
+      const a = document.createElement('a'); a.download = 'asl-frame.png';
+      const tmp = document.createElement('canvas'); tmp.width = videoEl.videoWidth || 960; tmp.height = videoEl.videoHeight || 540;
+      const tctx = tmp.getContext('2d');
+      // draw mirrored (video is mirrored via CSS; we want the snapshot to match visual)
+      tctx.translate(tmp.width, 0); tctx.scale(-1,1);
+      tctx.drawImage(videoEl, 0, 0, tmp.width, tmp.height);
+      a.href = tmp.toDataURL('image/png'); a.click();
+    });
+
+    // Error dialog helper
+    function showError(err){
+      let msg = '';
+      if(err && err.name){
+        msg = `${err.name}: ${err.message}`;
+      } else {
+        msg = String(err);
+      }
+      errMsg.textContent = msg + ' — common causes: permission denied, page served from file://, or no camera attached.';
+      errDialog.showModal();
+    }
+
+    // Auto-open how-to and attach small safety check on load
+    window.addEventListener('load', () => { setTimeout(()=>howTo.showModal(), 400); });
+
+    // Ensure graceful shutdown when navigating away
+    window.addEventListener('beforeunload', () => { try{ if(mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); }catch(e){} });
+
+    // Auto-recovery when camera becomes available (optional): listen for devicechange
+    navigator.mediaDevices && navigator.mediaDevices.addEventListener && navigator.mediaDevices.addEventListener('devicechange', () => {
+      // If user plugged a webcam or changed settings, we can try to recover
+      console.log('Media devices changed');
+    });
+
+    // Auto-open instructions on first load is handled above
+  </script>
+</body>
+</html>
