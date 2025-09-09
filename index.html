@@ -302,12 +302,9 @@ python -m http.server 8000
     async function loadModel() {
       modelStatus.textContent = 'Model: Loading...';
       try {
-        // The previous error was a TypeError due to fetching from a relative path
-        // when the page is not served from a web server. We fix this by
-        // using an absolute URL to a sample public model.
-        // You will need to replace these with your own public URLs.
-        const modelUrl = "https://storage.googleapis.com/tfjs-models/tfjs/simple-sign-detector/model.json";
-        const labelsUrl = "https://storage.googleapis.com/tfjs-models/tfjs/simple-sign-detector/labels.json";
+        // These paths are relative to the location of this HTML file.
+        const modelUrl = "model_tfjs/model.json";
+        const labelsUrl = "model_tfjs/model_labels.json";
 
         // Load the model
         model = await tf.loadLayersModel(modelUrl);
