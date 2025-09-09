@@ -1,3 +1,4 @@
+!pip install tensorflowjs
 import json
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -13,7 +14,7 @@ EPOCHS = 30
 BATCH_SIZE = 32
 
 # ====== Load dataset ======
-with open("model_basics.json") as f:
+with open("model_basic.json") as f:
     raw_data = json.load(f)
 
 X, y = [], []
@@ -27,7 +28,7 @@ for sample in raw_data:
     seq = np.zeros((SEQ_LEN, NUM_FEATURES))
 
     # Handle static vs motion samples
-    if landmarks.ndim == 1:  
+    if landmarks.ndim == 1:
         # static (single frame → shape (63,))
         seq[0] = landmarks
     else:
