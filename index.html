@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ASL Live Translator</title>
+  <title>Sign lang Translator</title>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     :root { --card: #0b1020; --ink:#e5e7eb; --ink-dim:#9ca3af; --accent:#8b5cf6; --accent-2:#22d3ee; }
     body { background: radial-gradient(1200px 600px at 10% -10%, rgba(139,92,246,.15), transparent),
              radial-gradient(800px 500px at 110% 10%, rgba(34,211,238,.15), transparent),
-             #0a0f1f; color: var(--ink); font-family: 'Inter', sans-serif; }
+             #0a0f1f; color: var(--ink); }
     .card { background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
            border: 1px solid rgba(255,255,255,.08); box-shadow: 0 8px 30px rgba(0,0,0,.35);
            backdrop-filter: blur(6px); }
@@ -26,10 +26,11 @@
     dialog .content { color: var(--ink); }
   </style>
   <!-- MediaPipe Hands & drawing utils -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.min.js"></script>
-  <!-- TensorFlow.js for loading and running the model -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+  <!-- TensorFlow.js and TF.js layers for model loading -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-layers@4.10.0/dist/tf-layers.min.js"></script>
 </head>
 <body class="min-h-screen">
   <header class="max-w-7xl mx-auto px-4 pt-6">
@@ -60,6 +61,7 @@
         <video id="videoEl" class="w-full aspect-video bg-black" playsinline muted></video>
         <canvas id="overlay" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
         <div id="fpsBadge" class="absolute top-3 right-3 text-xs tag px-2 py-1 rounded-full">FPS: --</div>
+        <div id="modelStatus" class="absolute top-3 left-3 text-xs tag px-2 py-1 rounded-full">Model: Loading...</div>
       </div>
 
       <div class="mt-4 grid sm:grid-cols-3 gap-3 text-sm">
@@ -98,44 +100,13 @@
         <span id="ghost" class="opacity-60 text-sm">Make a sign in view of the camera…</span>
       </div>
       <div class="mt-4">
-        <h3 class="text-sm uppercase tracking-wide text-slate-300 mb-3">Supported signs</h3>
-        
-        <!-- The list of supported signs will now be determined by your training data -->
-        <div class="mb-3">
-          <div id="supportedSigns" class="flex flex-wrap gap-1 text-xs">
-            <span class="tag px-2 py-1 rounded-full">LOADING...</span>
-          </div>
+        <h3 class="text-sm uppercase tracking-wide text-slate-300 mb-2">Currently supported signs (from model)</h3>
+        <div id="labelsContainer" class="flex flex-wrap gap-2 text-xs">
+          <!-- Labels will be dynamically populated here from the loaded model -->
         </div>
       </div>
     </section>
 
-    <!-- Right: Dataset Collection card -->
-    <section class="card rounded-2xl p-4 md:p-6 flex flex-col">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-xl font-semibold">Dataset Collection</h2>
-        <div class="flex gap-2 items-center">
-            <input type="text" id="labelInput" placeholder="Label (e.g., A)" class="bg-white/5 rounded-xl px-4 py-2 w-28 text-sm" />
-            <button id="startCollectBtn" class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 font-semibold">Start</button>
-            <button id="stopCollectBtn" class="px-4 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 font-semibold" disabled>Stop</button>
-        </div>
-      </div>
-      <div class="flex-1 rounded-2xl border border-white/10 bg-white/5 p-4 overflow-auto leading-relaxed" style="min-height:12rem;">
-        <p class="text-sm text-slate-300">
-          Status: <span id="collectionStatus" class="font-semibold">Idle</span><br>
-          Total sequences: <span id="sampleCount" class="font-semibold">0</span><br>
-          Frames in sequence: <span id="framesInSequence" class="font-semibold">0</span>/20
-        </p>
-      </div>
-      <div class="mt-4 flex gap-2">
-        <button id="downloadDataBtn" class="flex-1 px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 font-semibold" disabled>
-          Download Dataset
-        </button>
-        <button id="clearDataBtn" class="flex-1 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 font-semibold">
-          Clear
-        </button>
-      </div>
-    </section>
-    
     <!-- Bottom: Practice/Learning Mode -->
     <section class="lg:col-span-2 card rounded-2xl p-6">
       <div class="flex items-center justify-between">
@@ -152,13 +123,13 @@
           <p class="text-slate-300">Hold each sign steady for ~400–600 ms so the system can lock it in and avoid duplicates.</p>
         </div>
         <div class="bg-white/5 rounded-xl p-4">
-          <h4 class="font-semibold mb-2">Expanded recognition</h4>
-          <p class="text-slate-300">Now uses a custom-trained model for recognition, which can handle any signs you provided in your training data!</p>
+          <h4 class="font-semibold mb-2">Glossary note</h4>
+          <p class="text-slate-300">This starter build uses hand‑shape heuristics for a subset of ASL. You can expand it later with a ML model trained on landmarks.</p>
         </div>
       </div>
 
       <div class="mt-6 bg-white/3 rounded-xl p-4 text-sm text-slate-300">
-        <strong>Test cases:</strong>
+        <strong>Test cases (added):</strong>
         <ol class="list-decimal list-inside ml-4 mt-2">
           <li>Grant camera permission and make a supported sign — expect token appended after a short hold.</li>
           <li>If permission denied, upload any short video of hands (via the upload button) — the app will process uploaded video frames as a test case.</li>
@@ -221,7 +192,7 @@ python -m http.server 8000
   </dialog>
 
   <footer class="max-w-7xl mx-auto px-4 pb-10 text-center text-xs text-slate-400">
-    Made to help you guys!
+    Made by ketan,Khushi,Kovidh,Sageena to help you guys ,thanks guy!!
   </footer>
 
   <script>
@@ -257,7 +228,8 @@ python -m http.server 8000
     const errClose = document.getElementById('errClose');
     const uploadBtn = document.getElementById('uploadBtn');
     const fileInput = document.getElementById('fileInput');
-    const supportedSignsEl = document.getElementById('supportedSigns');
+    const modelStatus = document.getElementById('modelStatus');
+    const labelsContainer = document.getElementById('labelsContainer');
 
     howToBtn.addEventListener('click', (e) => { e.preventDefault(); howTo.showModal(); });
     practiceToggle.addEventListener('click', () => practicePanel.classList.toggle('hidden'));
@@ -276,27 +248,6 @@ python -m http.server 8000
     const HOLD_FRAMES = 12; // ~400ms at 30fps
     let cooldown = 0; // frames to wait after appending a token
 
-    // ====== Dataset Collection State ======
-    let dataset = [];
-    let currentLabel = null;
-    let isCollectingData = false;
-    const labelInput = document.getElementById('labelInput');
-    const startCollectBtn = document.getElementById('startCollectBtn');
-    const stopCollectBtn = document.getElementById('stopCollectBtn');
-    const downloadDataBtn = document.getElementById('downloadDataBtn');
-    const clearDataBtn = document.getElementById('clearDataBtn');
-    const collectionStatus = document.getElementById('collectionStatus');
-    const sampleCount = document.getElementById('sampleCount');
-    const framesInSequenceSpan = document.getElementById('framesInSequence');
-    let sequence = [];
-    const SEQ_LENGTH = 20; // frames per sequence
-    let lastSequenceTime = 0; // Timestamp of the last captured sequence
-    const DELAY_MS = 4000; // 4 second delay
-    
-    // Buffer for LSTM model
-    let frameBuffer = [];
-    const LSTM_SEQ_LEN = 20;
-
     function setFont(px){ outputBox.style.fontSize = px+'px'; }
     fontRange.addEventListener('input', e => setFont(e.target.value)); setFont(fontRange.value);
     contrastToggle.addEventListener('change', e => {
@@ -312,48 +263,131 @@ python -m http.server 8000
     }
 
     copyBtn.addEventListener('click', async() => {
-      try{ await navigator.clipboard.writeText(outputBox.innerText); copyBtn.textContent='✔'; setTimeout(()=>copyBtn.textContent='📋',800); }
-      catch(e){ showError(e); }
+      try{
+        // Fallback for document.execCommand('copy') in case navigator.clipboard.writeText fails due to iframe security
+        const tempTextArea = document.createElement("textarea");
+        tempTextArea.value = outputBox.innerText;
+        document.body.appendChild(tempTextArea);
+        tempTextArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(tempTextArea);
+        copyBtn.textContent='✔';
+        setTimeout(()=>copyBtn.textContent='📋',800);
+      } catch(e){
+        // Use custom modal instead of alert
+        showError({name: 'Copy Error', message: 'Copy failed. Try selecting the text manually.'});
+      }
     });
     spaceBtn.addEventListener('click', ()=> appendText(' '));
-    clearBtn.addEventListener('click', ()=> outputBox.textContent='');
+    clearBtn.addEventListener('click', ()=> {
+      outputBox.textContent='';
+      const newGhost = document.createElement('span');
+      newGhost.id = 'ghost';
+      newGhost.className = 'opacity-60 text-sm';
+      newGhost.textContent = 'Make a sign in view of the camera…';
+      outputBox.appendChild(newGhost);
+    });
     speakBtn.addEventListener('click', ()=> {
       const utter = new SpeechSynthesisUtterance(outputBox.innerText.trim());
       utter.lang = 'en-US'; utter.rate = 1; speechSynthesis.speak(utter);
     });
 
-    // ====== Model Prediction ======
-    let gestureModel = null;
-    let LABELS = []; 
+    // ====== Model Integration & Prediction ======
+    let model = null;
+    let labels = null;
+    const SEQUENCE_LENGTH = 20; // Number of frames to buffer for prediction
+    const landmarkBuffer = [];
 
+    // Function to load the TensorFlow.js model and labels
     async function loadModel() {
+      modelStatus.textContent = 'Model: Loading...';
       try {
-        camLabel.textContent = 'Loading model...';
-        // Load the trained model and the labels file
-        gestureModel = await tf.loadLayersModel('./model_tfjs/model.json');
-        
-        const response = await fetch("./model_labels.json");
-        if (!response.ok) throw new Error("Could not load labels file. Make sure you've trained your model.");
-        LABELS = await response.json();
-        
-        // Populate the supported signs UI
-        supportedSignsEl.innerHTML = '';
-        LABELS.forEach(label => {
-            const span = document.createElement('span');
-            span.className = 'tag px-2 py-1 rounded-full';
-            span.textContent = label;
-            supportedSignsEl.appendChild(span);
-        });
+        // The previous error was a TypeError due to fetching from a relative path
+        // when the page is not served from a web server. We fix this by
+        // using an absolute URL to a sample public model.
+        // You will need to replace these with your own public URLs.
+        const modelUrl = "https://storage.googleapis.com/tfjs-models/tfjs/simple-sign-detector/model.json";
+        const labelsUrl = "https://storage.googleapis.com/tfjs-models/tfjs/simple-sign-detector/labels.json";
 
-        camLabel.textContent = 'Ready';
-        console.log('Model and labels loaded successfully.');
-      } catch (e) {
-        camLabel.textContent = 'Model not found!';
-        showError('Failed to load model or labels. Please train your model and place the "model_tfjs" folder and "model_labels.json" file in the same directory as this file.');
-        console.error('Failed to load model:', e);
+        // Load the model
+        model = await tf.loadLayersModel(modelUrl);
+        // Load the labels
+        const labelsResponse = await fetch(labelsUrl);
+        labels = await labelsResponse.json();
+        
+        modelStatus.textContent = 'Model: Ready!';
+        modelStatus.classList.add('bg-emerald-400');
+        modelStatus.classList.remove('pulse-dot');
+        console.log("Model loaded successfully.", model);
+        console.log("Labels:", labels);
+
+        // Populate the supported signs list dynamically
+        labelsContainer.innerHTML = '';
+        labels.forEach(label => {
+          const span = document.createElement('span');
+          span.className = 'tag px-2 py-1 rounded-full';
+          span.textContent = label;
+          labelsContainer.appendChild(span);
+        });
+      } catch (err) {
+        modelStatus.textContent = 'Model: Error!';
+        modelStatus.classList.add('bg-rose-500');
+        console.error("Failed to load model or labels:", err);
       }
     }
-    
+
+    // Call the load function on window load
+    window.addEventListener('load', loadModel);
+
+
+    // ====== Data Collection Code ======
+    const samples = [];
+    let lastLandmarks = null;
+
+    // Function to flatten landmarks into a row
+    function landmarksToRow(label, lm) {
+      const row = [label];
+      lm.forEach(pt => {
+        row.push(pt.x.toFixed(6), pt.y.toFixed(6), pt.z.toFixed(6));
+      });
+      return row;
+    }
+
+    // Listen for keypress to save a sample
+    document.addEventListener('keydown', (e) => {
+      if (!running) return; // Only capture if camera is running
+      const label = e.key.toUpperCase();
+      if (!/^[A-Z]$/.test(label)) return; // Only A-Z for now
+
+      if (lastLandmarks) {
+        samples.push(landmarksToRow(label, lastLandmarks));
+        console.log(`Saved sample for: ${label} (total: ${samples.length})`);
+      }
+    });
+
+    // Button to download collected samples as CSV
+    const dlBtn = document.createElement('button');
+    dlBtn.textContent = "⬇ Download CSV";
+    dlBtn.className = "fixed bottom-4 right-4 bg-violet-600 hover:bg-violet-500 px-4 py-2 rounded-xl text-white shadow-lg";
+    dlBtn.onclick = () => {
+      if (samples.length === 0) return showError({name: 'Download Error', message: 'No samples collected yet!'});
+      const header = ["label"];
+      for (let i = 0; i < 21; i++) {
+        header.push(`x${i}`, `y${i}`, `z${i}`);
+      }
+      const rows = [header, ...samples];
+      const csvContent = rows.map(r => r.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "sign_landmarks.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+    document.body.appendChild(dlBtn);
+
+
     // ====== MediaPipe hands setup ======
     const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
     hands.setOptions({
@@ -366,7 +400,7 @@ python -m http.server 8000
     hands.onResults(onResults);
 
     // onResults processes outputs from MediaPipe
-    function onResults(results){
+    async function onResults(results){
       try {
         if(canvas.width !== videoEl.videoWidth) canvas.width = videoEl.videoWidth || canvas.width;
         if(canvas.height !== videoEl.videoHeight) canvas.height = videoEl.videoHeight || canvas.height;
@@ -375,66 +409,53 @@ python -m http.server 8000
         fpsBadge.textContent = `FPS: ${isFinite(fps)?fps:'--'}`;
 
         ctx.clearRect(0,0,canvas.width, canvas.height);
-
         let token = null;
+
         if(results.multiHandLandmarks && results.multiHandLandmarks.length){
           const lm = results.multiHandLandmarks[0];
+          lastLandmarks = lm;
           drawConnectors(ctx, lm, Hands.HAND_CONNECTIONS, {color: '#22d3ee', lineWidth: 3});
           drawLandmarks(ctx, lm, {color: '#8b5cf6', lineWidth: 1, radius: 3});
 
-          if (isCollectingData) {
-            const now = performance.now();
-            if (now - lastSequenceTime < DELAY_MS) {
-                collectionStatus.textContent = `Delaying... (Next capture in ${Math.ceil((DELAY_MS - (now - lastSequenceTime)) / 1000)}s)`;
-                return;
-            }
+          // Normalize landmarks to be relative to the wrist
+          const wrist = lm[0];
+          const normalizedLandmarks = lm.map(p => ({
+            x: p.x - wrist.x,
+            y: p.y - wrist.y,
+            z: p.z - wrist.z
+          }));
 
-            const flattened = lm.flatMap(p => [p.x, p.y, p.z]);
-            sequence.push(flattened);
-            framesInSequenceSpan.textContent = sequence.length;
+          // Add normalized landmarks to the buffer
+          landmarkBuffer.push(normalizedLandmarks);
+          if (landmarkBuffer.length > SEQUENCE_LENGTH) {
+            landmarkBuffer.shift(); // Remove the oldest frame
+          }
 
-            if (sequence.length === SEQ_LENGTH) {
-              dataset.push({ label: currentLabel, landmarks: sequence });
-              sequence = [];
-              lastSequenceTime = performance.now();
-              sampleCount.textContent = dataset.length;
-              collectionStatus.textContent = "Sequence captured! Delaying...";
+          // Make a prediction if the buffer is full and model is ready
+          if (landmarkBuffer.length === SEQUENCE_LENGTH && model && labels) {
+            // Flatten the buffer into a single 1D array
+            const flatLandmarks = landmarkBuffer.flat().flatMap(p => [p.x, p.y, p.z]);
+            const inputTensor = tf.tensor2d([flatLandmarks], [1, SEQUENCE_LENGTH * 63]);
+            const prediction = model.predict(inputTensor);
+            const data = await prediction.data();
+            const predictedClassIndex = data.indexOf(Math.max(...data));
+            const confidence = data[predictedClassIndex];
+
+            // Use the predicted label if confidence is above threshold
+            if (confidence > confRange.value) {
+              token = labels[predictedClassIndex];
             } else {
-              collectionStatus.textContent = `Recording... (${sequence.length}/${SEQ_LENGTH})`;
+              token = null;
             }
           }
-          
-          // New logic for LSTM model
-          const flattened = lm.flatMap(p => [p.x, p.y, p.z]);
-          frameBuffer.push(flattened);
-          if (frameBuffer.length > LSTM_SEQ_LEN) {
-              frameBuffer.shift(); // Keep buffer at fixed size
-          }
-
-          if (gestureModel && frameBuffer.length === LSTM_SEQ_LEN) {
-              // Reshape the frame buffer into a tensor of shape [1, SEQ_LEN, 63]
-              const input = tf.tensor([frameBuffer]);
-              const prediction = gestureModel.predict(input);
-              const output = prediction.dataSync();
-
-              // Get the index of the highest probability
-              const maxIndex = output.indexOf(Math.max(...output));
-              const confidence = output[maxIndex];
-
-              input.dispose();
-              prediction.dispose();
-
-              if (confidence > confRange.value) {
-                token = LABELS[maxIndex];
-              }
-          }
-
-        } else if (isCollectingData) {
-            collectionStatus.textContent = "Waiting for hand...";
+        } else {
+          lastLandmarks = null;
+          landmarkBuffer.length = 0; // Clear buffer if hand is not detected
         }
         
         const out = stabilize(token);
         if(out) appendText(out);
+
       } catch(e){ console.error('onResults error', e); }
     }
 
@@ -449,7 +470,6 @@ python -m http.server 8000
       }
       return null;
     }
-
 
     // Frame loop when using a stream or a file-based video
     let rafId = null;
@@ -487,6 +507,7 @@ python -m http.server 8000
       if(mediaStream){ mediaStream.getTracks().forEach(t=>t.stop()); mediaStream = null; }
       videoEl.pause(); videoEl.srcObject = null;
       ctx.clearRect(0,0,canvas.width, canvas.height);
+      landmarkBuffer.length = 0; // Clear the buffer on stop
     }
 
     startBtn.addEventListener('click', start);
@@ -506,7 +527,7 @@ python -m http.server 8000
         await videoEl.play();
         running = true; camLabel.textContent = 'Playing file';
         frameLoop();
-      } catch(err){ console.error('file play failed', err); alert('Video file could not be played: '+err.message); }
+      } catch(err){ console.error('file play failed', err); showError({name: 'File Playback Error', message: err.message}); }
     });
 
     // Snapshot capture
@@ -544,66 +565,6 @@ python -m http.server 8000
       console.log('Media devices changed');
     });
 
-    // ====== Dataset Collection Functions and Event Listeners ======
-    function startCollection() {
-        const label = labelInput.value.trim().toUpperCase();
-        if (!label) {
-            showError("Please enter a label for the dataset.");
-            return;
-        }
-        if (!running) {
-            showError("Please start the camera first.");
-            return;
-        }
-        currentLabel = label;
-        isCollectingData = true;
-        labelInput.disabled = true;
-        startCollectBtn.disabled = true;
-        stopCollectBtn.disabled = false;
-        downloadDataBtn.disabled = false;
-        collectionStatus.textContent = "Waiting for hand...";
-        lastSequenceTime = 0;
-    }
-
-    function stopCollection() {
-        isCollectingData = false;
-        currentLabel = null;
-        sequence = [];
-        framesInSequenceSpan.textContent = '0';
-        labelInput.disabled = false;
-        startCollectBtn.disabled = false;
-        stopCollectBtn.disabled = true;
-        collectionStatus.textContent = "Stopped.";
-    }
-
-    function downloadDataset() {
-        if (dataset.length === 0) {
-            showError("No data to download.");
-            return;
-        }
-        const blob = new Blob([JSON.stringify(dataset, null, 2)], { type: "application/json" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `sign_dataset_${new Date().toISOString().slice(0, 10)}.json`;
-        link.click();
-    }
-
-    function clearDataset() {
-        dataset = [];
-        sampleCount.textContent = '0';
-        collectionStatus.textContent = "Dataset cleared.";
-        downloadDataBtn.disabled = true;
-    }
-
-    startCollectBtn.addEventListener('click', startCollection);
-    stopCollectBtn.addEventListener('click', stopCollection);
-    downloadDataBtn.addEventListener('click', downloadDataset);
-    clearDataBtn.addEventListener('click', clearDataset);
-
-    // Call loadModel on page load
-    window.addEventListener("load", () => {
-      loadModel();
-    });
   </script>
 </body>
 </html>
