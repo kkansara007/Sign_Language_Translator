@@ -295,6 +295,7 @@ python -m http.server 8000
     // ====== Model Integration & Prediction ======
     let model = null;
     let labels = null;
+    let modelInputShape = null; // Store the expected input shape of the model
     const SEQUENCE_LENGTH = 20; // Number of frames to buffer for prediction
     const landmarkBuffer = [];
 
@@ -312,6 +313,10 @@ python -m http.server 8000
         const labelsResponse = await fetch(labelsUrl);
         labels = await labelsResponse.json();
         
+        // Get the model's expected input shape
+        modelInputShape = model.input.shape;
+        console.log("Model input shape:", modelInputShape);
+
         modelStatus.textContent = 'Model: Ready!';
         modelStatus.classList.add('bg-emerald-400');
         modelStatus.classList.remove('pulse-dot');
@@ -422,28 +427,41 @@ python -m http.server 8000
             z: p.z - wrist.z
           }));
 
-          // Add normalized landmarks to the buffer
-          landmarkBuffer.push(normalizedLandmarks);
-          if (landmarkBuffer.length > SEQUENCE_LENGTH) {
-            landmarkBuffer.shift(); // Remove the oldest frame
+          // Determine prediction method based on model input shape
+          let inputTensor = null;
+          if (modelInputShape && modelInputShape.length === 2 && modelInputShape[1] === 63) {
+            // Single-frame model ([1, 63])
+            const flatLandmarks = normalizedLandmarks.flatMap(p => [p.x, p.y, p.z]);
+            inputTensor = tf.tensor2d([flatLandmarks], [1, 63]);
+          } else {
+            // Sequence-based model ([1, 1260]) or other
+            landmarkBuffer.push(normalizedLandmarks);
+            if (landmarkBuffer.length > SEQUENCE_LENGTH) {
+              landmarkBuffer.shift(); // Remove the oldest frame
+            }
+            if (landmarkBuffer.length === SEQUENCE_LENGTH) {
+              const flatLandmarks = landmarkBuffer.flat().flatMap(p => [p.x, p.y, p.z]);
+              inputTensor = tf.tensor2d([flatLandmarks], [1, SEQUENCE_LENGTH * 63]);
+            }
           }
-
-          // Make a prediction if the buffer is full and model is ready
-          if (landmarkBuffer.length === SEQUENCE_LENGTH && model && labels) {
-            // Flatten the buffer into a single 1D array
-            const flatLandmarks = landmarkBuffer.flat().flatMap(p => [p.x, p.y, p.z]);
-            const inputTensor = tf.tensor2d([flatLandmarks], [1, SEQUENCE_LENGTH * 63]);
+          
+          if (inputTensor && model && labels) {
             const prediction = model.predict(inputTensor);
             const data = await prediction.data();
             const predictedClassIndex = data.indexOf(Math.max(...data));
             const confidence = data[predictedClassIndex];
-
+            
+            // Log prediction results for debugging
+            console.log('Predicted class:', labels[predictedClassIndex], 'Confidence:', confidence.toFixed(2));
+            
             // Use the predicted label if confidence is above threshold
             if (confidence > confRange.value) {
               token = labels[predictedClassIndex];
             } else {
               token = null;
             }
+            inputTensor.dispose();
+            prediction.dispose();
           }
         } else {
           lastLandmarks = null;
