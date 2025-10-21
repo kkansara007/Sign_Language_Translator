@@ -329,28 +329,39 @@ python -m http.server 8000
     async function loadModel() {
       try {
         camLabel.textContent = 'Loading model...';
-        // Load the trained model and the labels file
+
+        // Load the trained model (relative path)
         gestureModel = await tf.loadLayersModel('./model_tfjs/model.json');
-        
+
+        // Quick validation: ensure model has an input shape
+        if (!gestureModel.inputs || gestureModel.inputs.length === 0) {
+          throw new Error("Loaded model has no inputs. Make sure model.json has an InputLayer with batch_input_shape or input_shape.");
+        }
+
+        // Print model summary to console (helps debug shapes)
+        try { gestureModel.summary(); } catch (err) { console.log("Model summary unavailable:", err); }
+
+        // Load labels file
         const response = await fetch("./model_labels.json");
-        if (!response.ok) throw new Error("Could not load labels file. Make sure you've trained your model.");
+        if (!response.ok) throw new Error("Could not load model_labels.json");
         LABELS = await response.json();
-        
-        // Populate the supported signs UI
+
+        // Populate supported signs UI
         supportedSignsEl.innerHTML = '';
         LABELS.forEach(label => {
-            const span = document.createElement('span');
-            span.className = 'tag px-2 py-1 rounded-full';
-            span.textContent = label;
-            supportedSignsEl.appendChild(span);
+          const span = document.createElement('span');
+          span.className = 'tag px-2 py-1 rounded-full';
+          span.textContent = label;
+          supportedSignsEl.appendChild(span);
         });
 
         camLabel.textContent = 'Ready';
         console.log('Model and labels loaded successfully.');
+        console.log('Model input shape(s):', gestureModel.inputs.map(i => i.shape));
       } catch (e) {
         camLabel.textContent = 'Model not found!';
-        showError('Failed to load model or labels. Please train your model and place the "model_tfjs" folder and "model_labels.json" file in the same directory as this file.');
         console.error('Failed to load model:', e);
+        showError('Failed to load model or labels. Check model_json presence and input shape (see console).');
       }
     }
     
@@ -412,22 +423,38 @@ python -m http.server 8000
           }
 
           if (gestureModel && frameBuffer.length === LSTM_SEQ_LEN) {
-              // Reshape the frame buffer into a tensor of shape [1, SEQ_LEN, 63]
-              const input = tf.tensor([frameBuffer]);
-              const prediction = gestureModel.predict(input);
-              const output = prediction.dataSync();
+            // Defensive: ensure each frame has 63 numbers
+            if (!frameBuffer.every(f => Array.isArray(f) && f.length === 63)) {
+              console.warn('frameBuffer malformed - expected each frame length 63', frameBuffer);
+            } else {
+              // Use tf.tidy to auto-dispose intermediate tensors
+              tf.tidy(() => {
+                // Create tensor with explicit dtype and shape [1, 20, 63]
+                const inputTensor = tf.tensor(frameBuffer, [LSTM_SEQ_LEN, 63], 'float32').expandDims(0); // shape [1,20,63]
 
-              // Get the index of the highest probability
-              const maxIndex = output.indexOf(Math.max(...output));
-              const confidence = output[maxIndex];
+                // Optional debug log:
+                // console.log('Input tensor shape:', inputTensor.shape);
 
-              input.dispose();
-              prediction.dispose();
+                // Model prediction
+                const logits = gestureModel.predict(inputTensor);
 
-              if (confidence > confRange.value) {
-                token = LABELS[maxIndex];
-              }
+                // Convert to probabilities (assuming final layer softmax) and read top index
+                // Use async .data() if large model, but dataSync is fine for small outputs
+                const probs = logits.dataSync(); // length = number of classes
+                const maxIndex = probs.indexOf(Math.max(...probs));
+                const confidence = probs[maxIndex];
+
+                // parse slider value (string -> float)
+                const threshold = parseFloat(confRange.value) || 0.6;
+
+                if (confidence > threshold) {
+                  token = LABELS[maxIndex];
+                }
+                // tensors from tf.tidy will be disposed automatically here
+              });
+            }
           }
+
 
         } else if (isCollectingData) {
             collectionStatus.textContent = "Waiting for hand...";
