@@ -379,258 +379,87 @@ python -m http.server 8000
     // onResults processes outputs from MediaPipe
     function onResults(results){
       try {
-        if(canvas.width !== videoEl.videoWidth) canvas.width = videoEl.videoWidth || canvas.width;
-        if(canvas.height !== videoEl.videoHeight) canvas.height = videoEl.videoHeight || canvas.height;
+       if (canvas.width !== videoEl.videoWidth) canvas.width = videoEl.videoWidth || canvas.width;
+if (canvas.height !== videoEl.videoHeight) canvas.height = videoEl.videoHeight || canvas.height;
 
-        const now = performance.now(); const dt = now - lastFrameTs; lastFrameTs = now; fps = Math.round(1000/dt);
-        fpsBadge.textContent = `FPS: ${isFinite(fps)?fps:'--'}`;
+ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        ctx.clearRect(0,0,canvas.width, canvas.height);
+// Draw hand landmarks
+if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+  for (const landmarks of results.multiHandLandmarks) {
+    drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: '#8b5cf6', lineWidth: 3});
+    drawLandmarks(ctx, landmarks, {color: '#22d3ee', lineWidth: 2});
+  }
 
-        let token = null;
-        if(results.multiHandLandmarks && results.multiHandLandmarks.length){
-          const lm = results.multiHandLandmarks[0];
-          drawConnectors(ctx, lm, Hands.HAND_CONNECTIONS, {color: '#22d3ee', lineWidth: 3});
-          drawLandmarks(ctx, lm, {color: '#8b5cf6', lineWidth: 1, radius: 3});
+  // Flatten landmarks into one array for the model
+  const landmarks = results.multiHandLandmarks[0].flatMap(p => [p.x, p.y, p.z]);
+  frameBuffer.push(landmarks);
+  if (frameBuffer.length > LSTM_SEQ_LEN) frameBuffer.shift();
 
-          if (isCollectingData) {
-            const now = performance.now();
-            if (now - lastSequenceTime < DELAY_MS) {
-                collectionStatus.textContent = `Delaying... (Next capture in ${Math.ceil((DELAY_MS - (now - lastSequenceTime)) / 1000)}s)`;
-                return;
-            }
+  // Run prediction only when we have enough frames
+  if (gestureModel && frameBuffer.length === LSTM_SEQ_LEN) {
+    const input = tf.tensor([frameBuffer]);
+    const prediction = gestureModel.predict(input);
+    const probs = prediction.dataSync();
+    const maxIndex = probs.indexOf(Math.max(...probs));
+    const confidence = probs[maxIndex];
+    input.dispose();
+    prediction.dispose();
 
-            const flattened = lm.flatMap(p => [p.x, p.y, p.z]);
-            sequence.push(flattened);
-            framesInSequenceSpan.textContent = sequence.length;
+    fpsBadge.textContent = `FPS: ${fps.toFixed(1)}`;
 
-            if (sequence.length === SEQ_LENGTH) {
-              dataset.push({ label: currentLabel, landmarks: sequence });
-              sequence = [];
-              lastSequenceTime = performance.now();
-              sampleCount.textContent = dataset.length;
-              collectionStatus.textContent = "Sequence captured! Delaying...";
-            } else {
-              collectionStatus.textContent = `Recording... (${sequence.length}/${SEQ_LENGTH})`;
-            }
-          }
-          
-          // New logic for LSTM model
-          const flattened = lm.flatMap(p => [p.x, p.y, p.z]);
-          frameBuffer.push(flattened);
-          if (frameBuffer.length > LSTM_SEQ_LEN) {
-              frameBuffer.shift(); // Keep buffer at fixed size
-          }
-
-          if (gestureModel && frameBuffer.length === LSTM_SEQ_LEN) {
-            // Defensive: ensure each frame has 63 numbers
-            if (!frameBuffer.every(f => Array.isArray(f) && f.length === 63)) {
-              console.warn('frameBuffer malformed - expected each frame length 63', frameBuffer);
-            } else {
-              // Use tf.tidy to auto-dispose intermediate tensors
-              tf.tidy(() => {
-                // Create tensor with explicit dtype and shape [1, 20, 63]
-                const inputTensor = tf.tensor(frameBuffer, [LSTM_SEQ_LEN, 63], 'float32').expandDims(0); // shape [1,20,63]
-
-                // Optional debug log:
-                // console.log('Input tensor shape:', inputTensor.shape);
-
-                // Model prediction
-                const logits = gestureModel.predict(inputTensor);
-
-                // Convert to probabilities (assuming final layer softmax) and read top index
-                // Use async .data() if large model, but dataSync is fine for small outputs
-                const probs = logits.dataSync(); // length = number of classes
-                const maxIndex = probs.indexOf(Math.max(...probs));
-                const confidence = probs[maxIndex];
-
-                // parse slider value (string -> float)
-                const threshold = parseFloat(confRange.value) || 0.6;
-
-                if (confidence > threshold) {
-                  token = LABELS[maxIndex];
-                }
-                // tensors from tf.tidy will be disposed automatically here
-              });
-            }
-          }
-
-
-        } else if (isCollectingData) {
-            collectionStatus.textContent = "Waiting for hand...";
+    if (confidence > parseFloat(confRange.value)) {
+      const gesture = LABELS[maxIndex];
+      if (gesture === stableGesture) {
+        holdCounter++;
+        if (holdCounter > HOLD_FRAMES && cooldown === 0) {
+          appendText(gesture + ' ');
+          cooldown = 10;
         }
-        
-        const out = stabilize(token);
-        if(out) appendText(out);
-      } catch(e){ console.error('onResults error', e); }
-    }
-
-    // Debounce/stabilize predictions across frames
-    function stabilize(token){
-      if(cooldown>0){ cooldown--; return null; }
-      if(token && token===stableGesture){ holdCounter++; }
-      else { stableGesture = token; holdCounter = token?1:0; }
-      if(stableGesture && holdCounter >= HOLD_FRAMES){
-        holdCounter = 0; cooldown = 10; // avoid duplicates
-        return stableGesture;
-      }
-      return null;
-    }
-
-
-    // Frame loop when using a stream or a file-based video
-    let rafId = null;
-    async function frameLoop(){
-      if(!running) return;
-      try {
-        if(videoEl.readyState >= 2){
-          await hands.send({image: videoEl});
-        }
-      } catch(e){ console.error('hands.send failed', e); }
-      rafId = requestAnimationFrame(frameLoop);
-    }
-
-    async function start(){
-      if(running) return; running = true; camLabel.textContent = 'Starting…'; camDot.classList.add('pulse-dot');
-      // Try to get camera stream (handle permission errors explicitly)
-      try {
-        const constraints = { video: { width: 960, height: 540, facingMode: 'user' }, audio: false };
-        mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-        videoEl.srcObject = mediaStream;
-        await videoEl.play();
-        camLabel.textContent = 'Live';
-        // start frame loop
-        frameLoop();
-      } catch(err){
-        running = false; camLabel.textContent = 'Permission denied'; camDot.classList.remove('pulse-dot');
-        console.error('Failed to acquire camera feed:', err);
-        showError(err);
-      }
-    }
-
-    async function stop(){
-      running = false; camLabel.textContent = 'Stopped'; camDot.classList.remove('pulse-dot');
-      if(rafId){ cancelAnimationFrame(rafId); rafId = null; }
-      if(mediaStream){ mediaStream.getTracks().forEach(t=>t.stop()); mediaStream = null; }
-      videoEl.pause(); videoEl.srcObject = null;
-      ctx.clearRect(0,0,canvas.width, canvas.height);
-    }
-
-    startBtn.addEventListener('click', start);
-    stopBtn.addEventListener('click', stop);
-
-    // Retry flow from dialog
-    retryBtn.addEventListener('click', () => { errDialog.close(); start(); });
-
-    // File upload fallback
-    fileInput.addEventListener('change', async (e) => {
-      const f = e.target.files && e.target.files[0];
-      if(!f) return;
-      try {
-        await stop();
-        const url = URL.createObjectURL(f);
-        videoEl.srcObject = null; videoEl.src = url; videoEl.muted = true; videoEl.loop = true;
-        await videoEl.play();
-        running = true; camLabel.textContent = 'Playing file';
-        frameLoop();
-      } catch(err){ console.error('file play failed', err); alert('Video file could not be played: '+err.message); }
-    });
-
-    // Snapshot capture
-    snapBtn.addEventListener('click', () => {
-      const a = document.createElement('a'); a.download = 'asl-frame.png';
-      const tmp = document.createElement('canvas'); tmp.width = videoEl.videoWidth || 960; tmp.height = videoEl.videoHeight || 540;
-      const tctx = tmp.getContext('2d');
-      // draw mirrored (video is mirrored via CSS; we want the snapshot to match visual)
-      tctx.translate(tmp.width, 0); tctx.scale(-1,1);
-      tctx.drawImage(videoEl, 0, 0, tmp.width, tmp.height);
-      a.href = tmp.toDataURL('image/png'); a.click();
-    });
-
-    // Error dialog helper
-    function showError(err){
-      let msg = '';
-      if(err && err.name){
-        msg = `${err.name}: ${err.message}`;
       } else {
-        msg = String(err);
+        stableGesture = gesture;
+        holdCounter = 0;
       }
-      errMsg.textContent = msg + ' — common causes: permission denied, page served from file://, or no camera attached.';
-      errDialog.showModal();
     }
 
-    // Auto-open how-to and attach small safety check on load
-    window.addEventListener('load', () => { setTimeout(()=>howTo.showModal(), 400); });
+    if (cooldown > 0) cooldown--;
+  }
+}
+}
 
-    // Ensure graceful shutdown when navigating away
-    window.addEventListener('beforeunload', () => { try{ if(mediaStream) mediaStream.getTracks().forEach(t=>t.stop()); }catch(e){} });
+async function startCamera() {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    videoEl.srcObject = mediaStream;
+    await videoEl.play();
+    camLabel.textContent = 'Running';
+    running = true;
+    requestAnimationFrame(processFrame);
+  } catch (e) {
+    showError(e);
+  }
+}
 
-    // Auto-recovery when camera becomes available (optional): listen for devicechange
-    navigator.mediaDevices && navigator.mediaDevices.addEventListener && navigator.mediaDevices.addEventListener('devicechange', () => {
-      // If user plugged a webcam or changed settings, we can try to recover
-      console.log('Media devices changed');
-    });
+function stopCamera() {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    running = false;
+    camLabel.textContent = 'Stopped';
+  }
+}
 
-    // ====== Dataset Collection Functions and Event Listeners ======
-    function startCollection() {
-        const label = labelInput.value.trim().toUpperCase();
-        if (!label) {
-            showError("Please enter a label for the dataset.");
-            return;
-        }
-        if (!running) {
-            showError("Please start the camera first.");
-            return;
-        }
-        currentLabel = label;
-        isCollectingData = true;
-        labelInput.disabled = true;
-        startCollectBtn.disabled = true;
-        stopCollectBtn.disabled = false;
-        downloadDataBtn.disabled = false;
-        collectionStatus.textContent = "Waiting for hand...";
-        lastSequenceTime = 0;
-    }
+async function processFrame() {
+  if (!running) return;
+  await hands.send({ image: videoEl });
+  const now = performance.now();
+  fps = 1000 / (now - lastFrameTs);
+  lastFrameTs = now;
+  requestAnimationFrame(processFrame);
+}
 
-    function stopCollection() {
-        isCollectingData = false;
-        currentLabel = null;
-        sequence = [];
-        framesInSequenceSpan.textContent = '0';
-        labelInput.disabled = false;
-        startCollectBtn.disabled = false;
-        stopCollectBtn.disabled = true;
-        collectionStatus.textContent = "Stopped.";
-    }
+startBtn.addEventListener('click', () => startCamera());
+stopBtn.addEventListener('click', () => stopCamera());
+loadModel(); // Load model on page load
 
-    function downloadDataset() {
-        if (dataset.length === 0) {
-            showError("No data to download.");
-            return;
-        }
-        const blob = new Blob([JSON.stringify(dataset, null, 2)], { type: "application/json" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `sign_dataset_${new Date().toISOString().slice(0, 10)}.json`;
-        link.click();
-    }
-
-    function clearDataset() {
-        dataset = [];
-        sampleCount.textContent = '0';
-        collectionStatus.textContent = "Dataset cleared.";
-        downloadDataBtn.disabled = true;
-    }
-
-    startCollectBtn.addEventListener('click', startCollection);
-    stopCollectBtn.addEventListener('click', stopCollection);
-    downloadDataBtn.addEventListener('click', downloadDataset);
-    clearDataBtn.addEventListener('click', clearDataset);
-
-    // Call loadModel on page load
-    window.addEventListener("load", () => {
-      loadModel();
-    });
-  </script>
 </body>
 </html>
