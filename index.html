@@ -331,7 +331,21 @@ python -m http.server 8000
         camLabel.textContent = 'Loading model...';
 
         // Load the trained model (relative path)
-        gestureModel = await tf.loadLayersModel('./model_tfjs/model.json');
+        try {
+  gestureModel = await tf.loadLayersModel('model/model.json');
+  console.log("Model loaded successfully ✅");
+  
+  // Debug: print model summary in console
+  gestureModel.summary();
+
+  // Check input shape
+  const inputShape = gestureModel.inputs[0].shape;
+  console.log("Model input shape:", inputShape);
+} catch (err) {
+  console.error("Model load failed ❌", err);
+  showError("Failed to load model: " + err.message);
+}
+
 
         // Quick validation: ensure model has an input shape
         if (!gestureModel.inputs || gestureModel.inputs.length === 0) {
